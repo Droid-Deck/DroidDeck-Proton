@@ -136,7 +136,8 @@ jobs:
       keys: ${{ needs.meta.outputs.keys }}
       restore: media
       goals: wine
-      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64 headers.
+      goals2: vulkan-headers spirv-headers vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
       ccache_size: 2G
       timeslice: true
       stage: 1
@@ -152,7 +153,8 @@ jobs:
       keys: ${{ needs.meta.outputs.keys }}
       restore: media
       goals: wine
-      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64 headers.
+      goals2: vulkan-headers spirv-headers vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
       ccache_size: 2G
       timeslice: true
       stage: 2
@@ -169,7 +171,8 @@ jobs:
       keys: ${{ needs.meta.outputs.keys }}
       restore: media
       goals: wine
-      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64 headers.
+      goals2: vulkan-headers spirv-headers vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
       ccache_size: 2G
       timeslice: true
       stage: 3
