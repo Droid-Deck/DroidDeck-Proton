@@ -1,20 +1,22 @@
-# Banner-Proton
+# DroidDeck-Proton
 
-Banner-Proton is a GE-Proton based Proton build for **ARM64 (aarch64) Linux**. It is made for
-[DroidDeck](https://github.com/The412Banner), which runs Valve's Steam client in an Arch Linux ARM
+_Formerly Banner-Proton (releases up to 11-7.2 carry the old tag and file names)._
+
+DroidDeck-Proton is a GE-Proton based Proton build for **ARM64 (aarch64) Linux**. It is made for
+[DroidDeck](https://github.com/Droid-Deck/DroidDeck), which runs Valve's Steam client in an Arch Linux ARM
 rootfs and runs Windows games through ARM64 Proton with FEX. It installs like any other Proton tool:
-extract the release tarball into `compatibilitytools.d` and pick **Banner-Proton &lt;version&gt;** in Steam.
+extract the release tarball into `compatibilitytools.d` and pick **DroidDeck-Proton &lt;version&gt;** in Steam.
 
 > [!Important]
-> Banner-Proton is an unofficial build. It is **not** GE-Proton, Proton-CachyOS or Valve's Proton, and
-> it is not affiliated with GloriousEggroll, CachyOS or Valve. Please do not report Banner-Proton
+> DroidDeck-Proton is an unofficial build. It is **not** GE-Proton, Proton-CachyOS or Valve's Proton, and
+> it is not affiliated with GloriousEggroll, CachyOS or Valve. Please do not report DroidDeck-Proton
 > problems to those projects; open an issue here instead.
 
 Status: **prerelease / proof of concept.** Builds come from GitHub Actions; device testing is still to come.
 
 ## How it is put together
 
-Banner-Proton is a fork of [proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)
+DroidDeck-Proton is a fork of [proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)
 (its history is kept on the `ge-master` branch). Wine is built in five tiers, and every tier is a
 tag on the wine branch so it can be bisected or turned off on its own:
 
@@ -41,7 +43,7 @@ exactly tier 2.
 | GE-Proton (`proton-ge-custom` master, includes everything in GE-Proton11-7 and the work after it) | `49c50f4b2546b06cea3493803f18a13bb2a2f0c8` |
 | Valve wine `bleeding-edge` (same commit GE master pins) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
 | CachyOS wine, `cachyos_11.0_20261001/main` (wine of proton-cachyos `cachyos-11.0-20261005-slr`) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| Banner-Proton wine, `banner-proton/11.7` | `96e8477b8bc178c0585b427968c3910d7649636a` |
+| DroidDeck-Proton wine, `banner-proton/11.7` | `96e8477b8bc178c0585b427968c3910d7649636a` |
 
 The machine-readable list is `banner-proton/PINS`; the version is `banner-proton/VERSION`.
 
@@ -129,7 +131,7 @@ Not carried, with the reason:
 [Droid-Deck/DroidDeck-Components](https://github.com/Droid-Deck/DroidDeck-Components) at `780ab619de`
 (maxjivi05), applied unchanged with `--fuzz=0` (line offsets only). It adds eventfd and shared memory
 sync to wineserver and the unix side of ntdll, following Elizabeth Figura's esync design, so DroidDeck
-needs no separate esync pack for Banner-Proton. wineserver still picks `/dev/ntsync`, then fsync, then
+needs no separate esync pack for DroidDeck-Proton. wineserver still picks `/dev/ntsync`, then fsync, then
 esync (`WINEESYNC` nonzero), then server-side sync, and reports `droiddeck-esync: up and running.` when
 it runs esync. The patch changes no wineserver request and no ntdll.so export; CI checks both (the
 protocol headers against tier 4, and the exports against the release given as `compare_with`).
@@ -139,7 +141,7 @@ protocol headers against tier 4, and the exports against the release given as `c
 All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) inside Valve's
 `steamrt4` arm64 Proton SDK image, like GE's aarch64 builds:
 
-- `Build Banner-Proton (aarch64)` (`.github/workflows/build-aarch64.yml`): GE's `configure.sh
+- `Build DroidDeck-Proton (aarch64)` (`.github/workflows/build-aarch64.yml`): GE's `configure.sh
   --target-arch=arm64`, with the Proton make split into parallel jobs (`_group.yml`,
   `banner-proton/ci.sh`): graphics (DXVK, d7vk, dxvk-nvapi, dxvk-igdext, vkd3d-proton, Vulkan layers),
   FEX, misc (wine-mono runtime, fonts, protonfixes, xrandr) and media (FFmpeg, dav1d, xz, bzip2, speech,
@@ -147,7 +149,7 @@ All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) i
   media, in up to three chained stages if one runner's time runs out; assemble runs the remaining
   `make dist`. Then everything is stripped
   (`strip --strip-unneeded` for ELF, `llvm-strip --strip-unneeded` for PE, no debug files) and packed as
-  `Banner-Proton-<version>-aarch64.tar.gz` plus `.sha512sum`, with the same layout as GE's tarball
+  `DroidDeck-Proton-<version>-aarch64.tar.gz` plus `.sha512sum`, with the same layout as GE's tarball
   (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). With "publish" (on main) it
   becomes a prerelease; "compare_with" compares the tarball with an earlier release.
 - Caches: each group's output, keyed by its sources (a group with a cached output is skipped), one
@@ -156,7 +158,7 @@ All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) i
 
 Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.GE-Proton.md), with
 `banner-proton/prep.sh` instead of `patches/protonprep-valve-staging.sh` and
-`../configure.sh --target-arch=arm64 --build-name=Banner-Proton-<version>-aarch64 --display-name="Banner-Proton <version>"`.
+`../configure.sh --target-arch=arm64 --build-name=DroidDeck-Proton-<version>-aarch64 --display-name="DroidDeck-Proton <version>"`.
 
 ## Credits
 
@@ -173,4 +175,4 @@ Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.
 
 Proton and its components are distributed under their own licenses; see [LICENSE](LICENSE),
 [LICENSE.proton](LICENSE.proton) and `dist.LICENSE` (shipped in the tarball). Wine is LGPL-2.1-or-later.
-Banner-Proton's own scripts and patches use the same licenses as the files they change.
+DroidDeck-Proton's own scripts and patches use the same licenses as the files they change.
