@@ -1,12 +1,13 @@
 # Wine-Mono Fixes
 
-These patches apply to Wine-Mono's Mono submodule, not Wine.
-`patches/protonprep-valve-staging.sh` prepares the official Wine-Mono 11.2.0
-source release and applies them. The Proton `Makefile.in` then builds
+The top-level patches apply to Wine-Mono's Mono submodule, not Wine.
+The `fna/` patches apply to the bundled FNA source instead.
+`patches/protonprep-valve-staging.sh` prepares the official Wine-Mono
+source release selected by `source.conf` and applies them. The Proton `Makefile.in` then builds
 `libmono-2.0-x86.dll` and `libmono-2.0-x86_64.dll` using the SDK's
 MinGW toolchains. Both runtime DLLs replace their prebuilt counterparts in
 the distribution. It also rebuilds the Windows `System.Drawing.dll` class
-library. All other managed libraries, WPF, WinForms, support MSI and native
+library and `WineMono.FNA.dll`. All other managed libraries, WPF, WinForms, support MSI and native
 helpers remain from the matching official binary release.
 
 The Mono patches do not change winewayland, mscoree, executable metadata,
@@ -16,10 +17,11 @@ below addresses a later failure. The layer/graphics work is unrelated.
 ## Source and Build
 
 - Upstream: <https://github.com/wine-mono/wine-mono>
-- Release: `wine-mono-11.2.0`, commit
-  `2973e4af02eeec2f2727e88e4559cb149271775d`.
-- Mono submodule: `775a29a0d864061a40438e38830c0afaadf9ae79`.
-- Source artifact: `wine-mono-11.2.0-src.tar.xz` from the official release.
+- Current release: `wine-mono-11.3.0`, selected by `source.conf`.
+- Source artifact: `wine-mono-${WINEMONO_VER}-src.tar.xz` from the official release.
+- Earlier Purple investigations used 11.2.0, commit
+  `2973e4af02eeec2f2727e88e4559cb149271775d`, with Mono submodule
+  `775a29a0d864061a40438e38830c0afaadf9ae79`.
 - Native runtime implementation remains upstream Wine-Mono/Mono, with the
   local patches authored by GloriousEggroll. No ReactOS source is used.
 
@@ -28,12 +30,13 @@ The first prep downloads the approximately 307 MB source archive to
 Every prep removes the generated `wine-mono/` source tree, re-extracts
 the pristine source including pinned
 submodules, and applies `patches/wine-mono/*.patch` in filename order.
+It then applies `patches/wine-mono/fna/*.patch` to `wine-mono/FNA/`.
 Re-extraction is the archive equivalent of reset/clean for this component;
 there is no Wine-Mono Git submodule. A symlink or Git checkout at that path
 is rejected rather than deleted.
 
 Only successful prep publishes `wine-mono/.proton-prepared`. The build
-copies that prepared tree into `build/src-wine-mono-11.2.0/` and builds the
+copies that prepared tree into `build/src-wine-mono-${WINEMONO_VER}/` and builds the
 native runtimes and class libraries there; it does not apply patches a second
 time. Re-running prep invalidates those build outputs. Builds without another prep
 reuse them. Re-run prep whenever changing the patch stack. Missing or stale
@@ -65,6 +68,98 @@ The agent has not compiled Proton or Mono. The user builds separately.
 Source/metadata inspection, patch validation, and diagnostic launches of
 the user's rebuilt runtime have been performed. The regression fixtures
 have not been assembled or run.
+
+## FNA Stencil Reference Ordering
+
+`fna/0001-graphicsdevice-preserve-stencil-reference-order.patch` corrects
+an ordering mismatch between deferred `DepthStencilState` assignment and
+immediate `GraphicsDevice.ReferenceStencil` access. Without the fix,
+assigning a new state, setting a reference, then drawing resets the
+reference to the state's original value. The getter can also return a
+stale value before drawing. Only the pending depth/stencil state is flushed;
+the supplied state object is not modified and other state remains deferred.
+
+For [Meridian: New World, issue 430](https://github.com/GloriousEggroll/proton-ge-custom/issues/430),
+read-only inspection of SunBurn's forward renderer found this exact call
+sequence in its direct-light passes: stencil `NotEqual`, a nonzero dynamic
+reference, and a stencil buffer cleared to zero. The game requests
+`Depth24Stencil8`. Overwriting the reference with zero rejects the lighting
+pass. The user's rebuilt version partially improved the lighting, but
+terrain darkness and scrolling flicker remained. Both SDL_GPU/Vulkan
+and D3D11/DXVK were dark, and disabling post-processing did not help.
+The native-XNA comparison instead failed on a separate Mono COM reference
+count assertion and is not a valid visual baseline.
+
+The current source is Wine-Mono 11.3.0 (see `source.conf`), with FNA
+26.08.0.0. The 11.2.0 runtime investigations elsewhere in this document
+are historical. The build now uses Wine-Mono's own `WineMono.FNA.dll`
+target, reusing the host compiler bootstrap. Packaging requires the same
+GAC assembly identity as the binary release and replaces only that DLL.
+FNA3D, XNA ABI stubs, NetStub, assembly configuration and native helpers
+remain from the release. No game DLLs or prefix overrides are changed.
+
+Re-run normal protonprep before rebuilding. Prep and build prerequisites
+include the FNA patch directory, so reapplying the stack retains the fix.
+Retest the demo with its normal graphics settings and without
+`WINE_MONO_OVERRIDES` or `FNA3D_FORCE_DRIVER`. Then compare the D3D11 backend.
+
+`tests/fna-reference-stencil.cs` is a standalone graphics regression
+fixture for baseline and patched FNA. Compile against `WineMono.FNA.dll`,
+then run through Wine-Mono with its normal native helpers available. It
+checks a pending state followed by an explicit reference, actual stencil-
+tested pixel output, another reference update without a state change,
+the getter before drawing, and rebinding a state after a dynamic override.
+It also exercises the internal effect-state merge through reflection,
+checking preservation across depth-write changes, cache reuse, explicit
+zero/nonzero effect references, and a pending state before a draw.
+The fixture has not been compiled or run; the agent does not build here.
+The FNA patch applies to the pristine 11.3.0 archive without fuzz or
+offsets, and its result matches the prepared source edit. Prep-script
+syntax and Git whitespace checks passed. No full prep, compilation or
+game retest was run by the agent for this change.
+
+### Effect-State Stencil Inheritance
+
+`fna/0002-pipelinecache-preserve-dynamic-stencil-reference.patch` fixes a
+second way the reference was lost. `PipelineCache.BeginApplyDepthStencil`
+copied `DepthStencilState.ReferenceStencil`, which still contains the
+original value, rather than the current `GraphicsDevice.ReferenceStencil`.
+An effect changing only depth writes could therefore reset the reference
+to zero. Seed the effect's state merge with the device value instead;
+an explicit effect `STENCILREF` continues to override it. The caller's
+state remains immutable and the cache key already includes the reference.
+This depends on 0001 to resolve pending depth/stencil state before the
+device reference is read. Both are GE-only downstream patches.
+
+The October 11 OpenGL core-profile RenderDoc capture confirms the failure:
+
+- `/tmp/meridian-gl-capture/frame_frame8191.rdc`, draw 2010: terrain lighting
+  produces RGB approximately `(0.2245, 0.2158, 0.0868)` but fails the stencil
+  test, leaving the ambient-only color approximately `(0.0353, 0.0706, 0.0471)`.
+- The active comparison is `NotEqual`; the reference changed from 220 to
+  zero while the stencil buffer at that pixel is zero. The depth test passes.
+- Changing only three reference-reset commands in a temporary copy of the
+  capture to preserve references 218, 219 and 220 restores the missing
+  lighting in replay. Before/after images and pixel history are in
+  `/tmp/meridian-gl-analysis/`. No game or installed runtime files were changed.
+
+This is replay-verified evidence for the remaining darkness, not a live
+verification of the rebuilt patch or scrolling flicker. Rebuild normally
+after protonprep, then test the default backend and D3D11 with no capture
+options. No prep-script change is needed: the existing FNA glob applies
+0001 then 0002 and the Makefile tracks both as inputs.
+Both patches were applied in order to the pristine 11.3.0 source files
+without fuzz or offsets, and both results byte-match the prepared tree.
+Git whitespace checks passed. No compilation or regression-fixture run
+was performed for 0002.
+
+Capture caveats: the diagnostic OpenGL run also reproduced the darkness.
+Use `FNA3D_OPENGL_FORCE_CORE_PROFILE=1` with OpenGL capture to avoid FNA's
+compatibility-profile `glTexEnvi` call disabling RenderDoc captures.
+WOW64 alone starts; WOW64 plus Vulkan capture failed because the captured
+device lacked usable low-address mapping support, leading to mappings
+outside the 32-bit address space. That capture startup failure is separate
+from the lighting bug and is not a reason to change the game's renderer.
 
 The user's first rebuilt capture (September 7, 23:48,
 `GE-Proton11-6-27-g80365ed3c`) failed earlier than the managed initializer:
