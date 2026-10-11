@@ -8,7 +8,7 @@ CACHYOS_WINE_BRANCH=cachyos_11.0_20261001/main
 CACHYOS_WINE_COMMIT=2ce6b44caa66a56ec99c7826ae564c088abc1b9f
 WINE_REPO=https://github.com/The412Banner/proton-wine
 WINE_BRANCH=banner-proton/11.7
-WINE_TIER_TAGS="bp-11.7-tier1 bp-11.7-tier2 bp-11.7-tier3 bp-11.7-tier4 bp-11.7-tier5 bp-11.7-tier6 bp-11.7-tier2.1"
+WINE_TIER_TAGS="bp-11.7-tier1 bp-11.7-tier2 bp-11.7-tier3 bp-11.7-tier4 bp-11.7-tier5 bp-11.7-tier6 bp-11.7-tier2.1 bp-11.7-tier7"
 # Wine patches GE added after tier 2 was made, committed on top of the branch (tags, in order).
 # verify-tier2.sh expects a fresh run of GE's wine section to equal tier 2 plus these.
 WINE_TIER2_FOLLOWUPS="bp-11.7-tier2.1"
@@ -21,3 +21,4 @@ WINE_PROTOCOL_BASE=709d1c14a84338514032e2053bcad02cec91c9ee
 DROIDDECK_ESYNC_PATCH="Droid-Deck/DroidDeck-Components droiddeck-esync/patches/valve-11/0001-droiddeck-esync.patch@780ab619de"
 # Tier 6: Arihany's SD card (noexec, force_anon) and drive-root copy fixes, from proton-wine proton_11.0.
 ARIHANY_FIXES_SOURCE="The412Banner/proton-wine proton_11.0@497c384f"
+# Tier 7: our own media fixes (winedmo DirectShow transform follows the allocator's row order: amstream FMVs upside down).

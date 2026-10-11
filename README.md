@@ -17,7 +17,7 @@ Status: early releases. Builds come from GitHub Actions; DOOMBLADE (Epic, D3D11)
 ## How it is put together
 
 DroidDeck-Proton is a fork of [proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)
-(its history is kept on the `ge-master` branch). Wine is built in six tiers, and every tier is a
+(its history is kept on the `ge-master` branch). Wine is built in seven tiers, and every tier is a
 tag on the wine branch so it can be bisected or turned off on its own:
 
 | Tier | What | Where | Tag |
@@ -28,6 +28,7 @@ tag on the wine branch so it can be bisected or turned off on its own:
 | 4 | Our portable Wine fixes from the Bannerlator layers | `The412Banner/proton-wine` `proton_11.7.1-GE` | `bp-11.7-tier4` |
 | 5 | DroidDeck's esync (eventfd and shared memory sync in wineserver and ntdll) | `Droid-Deck/DroidDeck-Components` `droiddeck-esync` | `bp-11.7-tier5` |
 | 6 | Arihany's SD card fixes: PE images in anonymous memory (noexec mounts) and the drive-root copy fix | `The412Banner/proton-wine` `proton_11.0` | `bp-11.7-tier6` |
+| 7 | Our media fixes: DirectShow video decoders follow the row order the downstream allocator asks for (amstream FMVs no longer upside down) | `The412Banner/proton-wine` `banner-proton/11.7` | `bp-11.7-tier7` |
 
 The wine source is [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine) branch
 `banner-proton/11.7`; this repository's `wine` submodule points at it. Everything outside wine
@@ -37,7 +38,7 @@ media stack ...) is GE-Proton's, prepared by GE's own `patches/protonprep-valve-
 The `Verify wine tier 2` workflow re-runs GE's wine section on tier 1 and checks the result is
 exactly tier 2 plus its follow-up commits (`WINE_TIER2_FOLLOWUPS` in `banner-proton/PINS`).
 
-### Pins (version 11-7.4)
+### Pins (version 11-7.5)
 
 | | Commit |
 |---|---|
@@ -45,7 +46,7 @@ exactly tier 2 plus its follow-up commits (`WINE_TIER2_FOLLOWUPS` in `banner-pro
 | DXVK (`doitsujin/dxvk` master; GE master still pins `71ec7b5b`, one commit older) | `2c94c5f25cf75c313ef2a55b2e0c9276d67c28d6` |
 | Valve wine `bleeding-edge` (same commit GE master pins) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
 | CachyOS wine, `cachyos_11.0_20261001/main` (wine of proton-cachyos `cachyos-11.0-20261005-slr`) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| DroidDeck-Proton wine, `banner-proton/11.7` | `3083925364b21959461c2843d5c7015cf62d3309` |
+| DroidDeck-Proton wine, `banner-proton/11.7` | `847635ca0ec7871fa9a3df80283c20dcdc09d572` |
 
 The machine-readable list is `banner-proton/PINS`; the version is `banner-proton/VERSION`.
 
@@ -172,6 +173,22 @@ Not taken: Arihany's `LC_ALL=C.UTF-8` default, which is for Android's bionic lib
 CI guards (a build without the fixes fails): the `Wine protocol unchanged` job checks the fix code in
 the wine source, and `Verify tarball` looks for each fix's trace string in `ntdll.so` and in every
 `shell32.dll`.
+
+### Tier 7: media fixes
+
+- **winedmo: DirectShow transforms follow the allocator's row order** (`dlls/winedmo/quartz_transform.c`).
+  amstream's DirectDraw stream (`IAMMultiMediaStream` / `IDirectDrawStreamSample::Update`) connects to a
+  video decoder with a bottom-up RGB type, but its allocator's samples are locked DirectDraw surfaces,
+  which are top-down; it says so with a negative `biHeight` from the sample's `GetMediaType()`. quartz's
+  AVI decompressor and upstream winegstreamer honor that; the winedmo transform from GE's video rework
+  did not, so RGB24/RGB32 MPEG-1 FMVs played through amstream (Toy Story 2) showed upside down. The
+  transform now checks each output sample's media type and switches the winedmo output's row order
+  (`winedmo_transform_set_output_format`) when an RGB sample asks for it; allocators that report no type
+  (the default allocator, the video renderers) see no change. GE fixed the same thing for qasf only
+  (`ge-video-rework/0026`).
+
+CI guards: the `Wine protocol unchanged` job checks the fix code in the wine source, and `Verify tarball`
+looks for its trace string in every `winedmo.dll`.
 
 ## Building
 

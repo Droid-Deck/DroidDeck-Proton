@@ -18,6 +18,10 @@ on:
         description: "Publish the tarball as the latest GitHub release (main only)"
         type: boolean
         default: true
+      prerelease:
+        description: "Publish as a prerelease, not marked latest (until it is device-proven)"
+        type: boolean
+        default: false
       compare_with:
         description: "Release tag whose tarball the new one is compared with (file list, sizes, markers)"
         type: string
@@ -214,7 +218,7 @@ jobs:
           tools/make_requests
           git diff --stat --exit-code -- $files
           echo "protocol unchanged since $WINE_PROTOCOL_BASE"
-      - name: Tier 6 fixes in the wine source
+      - name: Tier 6 and 7 fixes in the wine source
         run: |
           # The tier 6 fixes have no getenv string of their own; check the code itself so a rebase
           # that drops a hunk fails here rather than shipping a build without it.
@@ -234,6 +238,12 @@ jobs:
           has $s "size_t dir_len = ptr - file_name + 1;"
           has $s "if (ptr == file_name || (ptr == file_name + 2 && file_name[1] == ':'))"
           has $s "lstrcpynW(file_entry->szDirectory, file_name, dir_len);"
+          # Tier 7: the winedmo DirectShow transform reads each output sample's media type and
+          # follows the row order it asks for (amstream FMVs upside down otherwise).
+          q=dlls/winedmo/quartz_transform.c
+          has $q "transform_update_sample_row_order(filter, output_sample);"
+          has $q "if (filter->have_sample_row_order)"
+          has $q "winedmo_transform_set_output_format(filter->winedmo_transform,"
           exit $fail
 
   verify:
@@ -253,7 +263,8 @@ jobs:
           . banner-proton/PINS
           mkdir x
           tar -C x -xzf new/$NAME.tar.gz --wildcards '*/version' '*/aarch64-unix/ntdll.so' '*/aarch64-unix/win32u.so' \
-            '*/bin-arm64/wineserver' '*sharedgpures.sys' '*-windows/shell32.dll' '*/compatibilitytool.vdf' '*/toolmanifest.vdf'
+            '*/bin-arm64/wineserver' '*sharedgpures.sys' '*-windows/shell32.dll' '*-windows/winedmo.dll' \
+            '*/compatibilitytool.vdf' '*/toolmanifest.vdf'
           # The tarball's one top folder is the display name.
           T="x/${{ needs.meta.outputs.display_name }}"
           ls x
@@ -267,13 +278,19 @@ jobs:
           if [ -n "${DROIDDECK_ESYNC_PATCH:-}" ]; then
             need "$T/files/bin-arm64/wineserver" "droiddeck-esync: up and running"
           fi
-          # Tier 6: the trace lines that sit inside each fix (see the "Tier 6 fixes in the wine
+          # Tier 6: the trace lines that sit inside each fix (see the "Tier 6 and 7 fixes in the wine
           # source" check for the code itself).
           need "$T/files/lib/wine/aarch64-unix/ntdll.so" "force_anon: reading %p-%p into anonymous memory"
           shell32s=$(cd "$T" && find files -name shell32.dll | LC_ALL=C sort)
           echo "shell32.dll: $(echo $shell32s)"
           [ "$(echo "$shell32s" | grep -c .)" -ge 2 ] || { echo "expected shell32.dll for more than one arch"; fail=1; }
           for f in $shell32s; do need "$T/$f" "drive root %s: keeping the root backslash"; done
+          # Tier 7: the trace line inside the winedmo row order fix, in every arch (32-bit games
+          # use the i386 one).
+          winedmos=$(cd "$T" && find files -name winedmo.dll | LC_ALL=C sort)
+          echo "winedmo.dll: $(echo $winedmos)"
+          [ "$(echo "$winedmos" | grep -c .)" -ge 2 ] || { echo "expected winedmo.dll for more than one arch"; fail=1; }
+          for f in $winedmos; do need "$T/$f" "downstream sample asks for %s RGB rows"; done
           echo "sharedgpures.sys: $(find x -name sharedgpures.sys | tr '\n' ' ')"
           [ -n "$(find x -name sharedgpures.sys)" ] || fail=1
           cat "$T/version"
@@ -403,10 +420,15 @@ jobs:
             echo
             echo "Tarball: $size bytes. See the README for the patch list per tier; \`$NAME.build-info.json\` has the pins and hashes."
           } > "$notes"
+          if [ "${{ inputs.prerelease }}" = true ]; then
+            kind="--prerelease=true --latest=false"
+          else
+            kind="--prerelease=false --latest"
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" --clobber
-            gh release edit "$TAG" --notes-file "$notes" --prerelease=false --latest
+            gh release edit "$TAG" --notes-file "$notes" $kind
           else
             gh release create "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" \
-              --target "$GITHUB_SHA" --latest --title "DroidDeck-Proton ${{ needs.meta.outputs.version }}" --notes-file "$notes"
+              --target "$GITHUB_SHA" $kind --title "DroidDeck-Proton ${{ needs.meta.outputs.version }}" --notes-file "$notes"
           fi
