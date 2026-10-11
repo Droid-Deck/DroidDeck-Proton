@@ -63,3 +63,28 @@ if pick:
     for p in pick:
         diff = [i for i, (x, y) in enumerate(zip(a[p], b[p])) if x != y]
         print(f'  {p}: {len(diff)} bytes differ, offsets {[hex(i) for i in diff[:8]]}')
+
+# FFmpeg libraries that differ in more than timestamps: show what differs (sections, dynamic
+# section, notes, strings, exports).
+import os, subprocess, tempfile
+ff = [p for p in content if re.search(r'/lib(avcodec|avutil)\.so\.[0-9.]+$', p)]
+if ff:
+    a, b = read(sys.argv[1], set(ff)), read(sys.argv[2], set(ff))
+    def run(cmd, data):
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(data)
+        try:
+            return subprocess.run(cmd + [f.name], capture_output=True, text=True, errors='replace').stdout.replace(f.name, 'X')
+        finally:
+            os.unlink(f.name)
+    import difflib
+    for p in ff:
+        print(f'== {p}')
+        for cmd in (['readelf', '-SW'], ['readelf', '-dW'], ['readelf', '-nW'], ['strings', '-n', '6']):
+            x, y = run(cmd, a[p]), run(cmd, b[p])
+            if cmd[0] == 'strings':
+                x, y = '\n'.join(sorted(set(x.splitlines()))), '\n'.join(sorted(set(y.splitlines())))
+            d = [l for l in difflib.unified_diff(x.splitlines(), y.splitlines(), lineterm='', n=0) if not l.startswith('@@')]
+            print(f'  {" ".join(cmd)}: {max(len(d) - 2, 0)} differing lines')
+            for l in d[2:42]:
+                print('    ' + l[:200])
