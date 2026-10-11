@@ -308,14 +308,19 @@ jobs:
           if grep -laF Banner-Proton "$T"/files/lib/*/libav*.so*; then echo "old name in FFmpeg"; fail=1; fi
           (cd "$T" && sha256sum files/lib/wine/aarch64-unix/ntdll.so files/bin-arm64/wineserver $shell32s) | tee sums.txt
           exit $fail
-      - name: wine-mono debug files and the igdext copy
+      - name: Debug files, FEX version and the igdext copy
         run: |
           NAME="${{ needs.meta.outputs.build_name }}"
           DIR="${{ needs.meta.outputs.display_name }}"
           tar -tzf new/$NAME.tar.gz > list.txt
           # strip-dist.py deletes wine-mono's separate debug-symbol files.
-          if grep -iE '^[^/]+/files/share/wine/mono/.*\.(dbg|pdb)$' list.txt; then echo "wine-mono debug files left (above)"; exit 1; fi
-          echo "ok: no .dbg/.pdb under files/share/wine/mono ($(grep -c '/files/share/wine/mono/' list.txt) entries there)"
+          if grep -iE '^[^/]+/files/share/(wine/mono|xalia)/.*\.(dbg|pdb)$' list.txt; then echo "wine-mono/Xalia debug files left (above)"; exit 1; fi
+          echo "ok: no .dbg/.pdb under files/share/wine/mono or files/share/xalia"
+          # FEX must carry its version name (from the FEX submodule's tags).
+          tar -C x -xzf new/$NAME.tar.gz --wildcards '*/aarch64-windows/libarm64ecfex.dll'
+          fexver=$(strings -a "$(find x -name libarm64ecfex.dll | head -1)" | grep -m1 -oE '^FEX-[0-9]{4}[0-9A-Za-z.+-]*' || true)
+          if [ -z "$fexver" ]; then echo "FEX has no version name"; exit 1; fi
+          echo "ok: FEX version $fexver"
           # The proton script copies igdext64.dll into the prefix's DriverStore; run that step from
           # the shipped script against the shipped files.
           tar -C x -xzf new/$NAME.tar.gz "$DIR/proton" --wildcards '*/files/lib/wine/igdext/*'

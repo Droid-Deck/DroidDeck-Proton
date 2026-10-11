@@ -107,7 +107,12 @@ jobs:
           submodules: false
 
       - name: Submodules
-        run: git submodule update --init --filter=tree:0 --recursive --jobs 8
+        run: |
+          git submodule update --init --filter=tree:0 --recursive --jobs 8
+          # FEX names itself with `git describe --tags`; the submodule checkout has no tags, so
+          # without them the build carries no version name (DroidDeck shows "build without a version name").
+          git -C FEX fetch --quiet --tags --filter=tree:0 origin
+          git -C FEX describe --tags
 
       - name: Read pins
         run: |

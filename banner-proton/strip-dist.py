@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # Strip a Proton dist tree: ELF with "strip --strip-unneeded", PE with "llvm-strip --strip-unneeded".
 # Upstream prebuilt payloads (wine-mono, wine-gecko, Xalia) and anything that is not ELF/PE are left alone,
-# except wine-mono's separate debug-symbol files (*.dbg, *.pdb), which are deleted: nothing loads them at
-# run time (libmono-2.0-x86{,_64}.dbg alone are ~37 MB).
+# except their separate debug-symbol files (*.dbg, *.pdb) in wine-mono and Xalia, which are deleted:
+# nothing loads them at run time (libmono-2.0-x86{,_64}.dbg alone are ~37 MB, xalia.pdb ~1.4 MB).
 # Usage: strip-dist.py <dist dir> <elf strip tool> <pe strip tool>
 import os, subprocess, sys
 from concurrent.futures import ThreadPoolExecutor
@@ -23,20 +23,21 @@ def kind(path):
         return "pe"
     return None
 
-MONO_DIR = "share/wine/mono"
-MONO_DEBUG_EXT = (".dbg", ".pdb")
+DEBUG_DIRS = ("share/wine/mono", "share/xalia")
+DEBUG_EXT = (".dbg", ".pdb")
 
-mono_removed = []
-for dirpath, dirnames, filenames in os.walk(os.path.join(root, MONO_DIR)):
-    for name in filenames:
-        p = os.path.join(dirpath, name)
-        if name.lower().endswith(MONO_DEBUG_EXT):
-            mono_removed.append((os.path.relpath(p, root), os.lstat(p).st_size))
-            os.remove(p)
-for rel, size in sorted(mono_removed):
+debug_removed = []
+for debug_dir in DEBUG_DIRS:
+    for dirpath, dirnames, filenames in os.walk(os.path.join(root, debug_dir)):
+        for name in filenames:
+            p = os.path.join(dirpath, name)
+            if name.lower().endswith(DEBUG_EXT):
+                debug_removed.append((os.path.relpath(p, root), os.lstat(p).st_size))
+                os.remove(p)
+for rel, size in sorted(debug_removed):
     print(f"removed {rel} ({size} bytes)")
-print(f"wine-mono debug files: {len(mono_removed)} removed, {sum(s for _, s in mono_removed)} bytes "
-      f"({sum(s for _, s in mono_removed)/1048576:.1f} MiB) saved")
+print(f"wine-mono/Xalia debug files: {len(debug_removed)} removed, {sum(s for _, s in debug_removed)} bytes "
+      f"({sum(s for _, s in debug_removed)/1048576:.1f} MiB) saved")
 
 jobs = []
 for dirpath, dirnames, filenames in os.walk(root):
