@@ -338,7 +338,7 @@ jobs:
             echo "| GE-Proton (proton-ge-custom master, after $GE_PROTON_RELEASE) | \`$GE_PROTON_COMMIT\` |"
             echo "| Valve wine $VALVE_WINE_BRANCH | \`$VALVE_WINE_COMMIT\` |"
             echo "| CachyOS ($CACHYOS_RELEASE) wine | \`$CACHYOS_WINE_BRANCH\` @ \`$CACHYOS_WINE_COMMIT\` |"
-            echo "| Banner-Proton wine | \`$WINE_BRANCH\` @ \`$(git ls-tree HEAD wine | awk '{print $3}')\` |"
+            echo "| Banner-Proton wine | \`$WINE_BRANCH\` @ \`$(git -C .. ls-tree HEAD wine | awk '{print $3}')\` |"
             echo "| Banner-Proton | \`$GITHUB_SHA\` |"
             echo
             echo "SDK image: \`$STEAMRT_IMAGE\` (\`$(jq -r .sdk_image_digest "$NAME.build-info.json")\`)"

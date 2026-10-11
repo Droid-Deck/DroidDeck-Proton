@@ -23,11 +23,12 @@ cmd=${1:?command}; shift
 keys() {
     cd "$ROOT"
     local img; img=$(. banner-proton/PINS; echo "$STEAMRT_IMAGE")
-    # Inputs shared by every group: the build rules, the source preparation, this CI (including the
-    # group goals) and the SDK.
+    # Inputs shared by every group: the build rules, the source preparation, this CI and the SDK.
     common() {
         git ls-files -s -- Makefile.in make configure.sh patches .github/patches \
-            banner-proton/prep.sh banner-proton/ci.sh .github/workflows/_group.yml .github/workflows/build-aarch64.yml
+            banner-proton/prep.sh banner-proton/ci.sh .github/workflows/_group.yml
+        # The group goals and pack settings, not the rest of the workflow (release notes, checks).
+        grep -E '^ +(goals|goals2|pack_exclude|pack_keep|restore):' .github/workflows/build-aarch64.yml
         echo "$img"
     }
     key() { { common; git ls-files -s -- "$@"; } | sha256sum | cut -c1-20; }
