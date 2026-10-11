@@ -1,6 +1,7 @@
 [submodule "wine"]
 	path = wine
-	url = https://github.com/ValveSoftware/wine
+	url = https://github.com/The412Banner/proton-wine
+	branch = banner-proton/11.7
 [submodule "wine-staging"]
 	path = wine-staging
 	url = https://github.com/wine-staging/wine-staging

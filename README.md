@@ -1,805 +1,157 @@
-> [!Caution]
->  **Myself (GloriousEggroll) and this project (GE-Proton) are not affiliated with any other websites related to GE-Proton. There is no existing website for GE-Proton other than this GitHub repository.**
+# Banner-Proton
+
+Banner-Proton is a GE-Proton based Proton build for **ARM64 (aarch64) Linux**. It is made for
+[DroidDeck](https://github.com/The412Banner), which runs Valve's Steam client in an Arch Linux ARM
+rootfs and runs Windows games through ARM64 Proton with FEX. It installs like any other Proton tool:
+extract the release tarball into `compatibilitytools.d` and pick **Banner-Proton &lt;version&gt;** in Steam.
 
 > [!Important]
-> **If you have an issue that happens with my GE-Proton build, provided from this repository, that does not happen on Valve's Proton, please do not open a bug report on Valve's bug tracker.**
->
-> Instead, open an issue on this repository's issue tracker: https://github.com/GloriousEggroll/proton-ge-custom/issues
->
-> or contact me on Discord about the issue: https://discord.gg/6y3BdzC
-
-# GE-Proton
-
-> [!Warning]
-> **Running non-Steam games with GE-Proton outside of Steam is only supported using [umu](https://github.com/Open-Wine-Components/umu-launcher):**
-> 
-> Proton runs in a container, which uses a runtime environment and libraries specifically built for use within that container. Not running it as intended results in the container and therefore its runtime not being used, which severely breaks library compatibility. It causes Wine to attempt to search for libraries on your system instead of those it was built with or intended for use with Proton. It may work if enough libraries match, but it is not the expected environment and not supported due to library differences across Linux distributions.
-> 
-> If you want Proton functionality outside of Steam, umu-launcher is a command-line tool that was designed to be able to mimic Steam in running the entire containerized runtime environment it needs in order to run Proton exactly as Steam does without needing Steam. Any other method is not supported.
->
->[Heroic](https://heroicgameslauncher.com/) has also enabled umu by default when using `GE-Proton`.
->
->[Lutris](https://lutris.net/) has integrated umu as the default backend used when `GE-Proton (Latest)` is selected as a Wine runner either globally or for any specific game.
-
-> [!Note]
-> (1) Please note, this is a custom build of Proton, and is not affiliated with Valve's Proton.
-> 
-> (2) Please also note I will not assist with unofficial builds of GE-Proton. The only version of GE-Proton that I provide and will assist with builds of is the one provided within this repository, using the build system documented here.
-> 
-> (3) I cannot validate the accuracy or functionality of other builds that have not been built using the build system included here.
-
-## Table of contents
-
-- [Overview](#overview)
-	- [Notes](#notes)
-- [Installation](#installation)
-	- [Native](#native)
-	- [Flatpak](#flatpak)
-		- [Flathub](#flathub)
-		- [Manual](#manual)
-- [Building](#building)
-- [Enabling](#enabling)
-- [Options](#options)
-- [Credits](#credits)
-	- [TKG (Etienne Juvigny)](#tkg-etienne-juvigny)
-	- [Guy1524 (Derek Lesho)](#guy1524-derek-lesho)
-	- [Joshie (Joshua Ashton)](#joshie-joshua-ashton)
-	- [doitsujin/ドイツ人 (Philip Rebohle)](#doitsujinドイツ人-philip-rebohle)
-	- [HansKristian/themaister (Hans-Kristian Arntzen)](#hanskristianthemaister-hans-kristian-arntzen)
-	- [flibitijibibo (Ethan Lee)](#flibitijibibo-ethan-lee)
-	- [simmons-public (Chris Simmons)](#simmons-public-chris-simmons)
-	- [wine-staging maintainers](#wine-staging-maintainers)
-	- [Reporters](#reporters)
-	- [Patrons](#patrons)
-- [Donations](#donations)
-- [Tested Games](#tested-games)
-
-## Overview
-
-This is my build of Proton with the most recent bleeding-edge Proton Experimental Wine.
-
-Things it contains that Valve's Proton currently does not:
-
-- Additional media foundation patches for better video playback support
-- AMD FSR patches added directly to fullscreen hack that can be toggled with WINE_FULLSCREEN_FSR=1
-- FSR fake resolution patch details [here](https://github.com/GloriousEggroll/proton-ge-custom/pull/52)
-- NVIDIA CUDA support for PhysX and NVAPI
-- Raw input mouse support
-- 'protonfixes' system -- this is an automated system that applies per-game fixes (such as winetricks changes, environment variables, Easy Anti-Cheat workarounds, overrides, etc)
-- Various upstream Wine patches backported
-- Various wine-staging patches applied as they become needed
-- NTSync enablement if the kernel supports it.
-
-## Notes
-
-- Warframe is problematic with VSync. Turn it off or on in game, do not set to `Auto`
-- Warframe should have a frame limit set in the game. An unlimited framerate may cause slowdowns
-- Warframe on NVIDIA: you may need to disable GPU particles in game otherwise the game can freeze randomly. On AMD they should work fine.
-
-Full patches can be viewed in [protonprep-valve-staging.sh](patches/protonprep-valve-staging.sh).
-
-## Installation
-
-You must have the proper Vulkan drivers and packages installed on your system. VKD3D on AMD requires Mesa 22.0.0 or higher for the VK_KHR_dynamic_rendering extension. Check [here](https://github.com/lutris/docs/blob/master/InstallingDrivers.md) for general driver installation guidance.
-
-### Manual
-
-#### Via [`asdf`, the version manager](https://asdf-vm.com/)
-
-There is an unofficial [plugin for installing and managing GE-Proton versions](https://github.com/augustobmoura/asdf-protonge)
-with [`asdf` (the universal version manager)](https://asdf-vm.com/), it follows
-the same process as the manual installation but makes it a lot easier. Managing
-versions by removing and updating to newer versions also becomes easier.
-
-To install by it first [install `asdf`](https://asdf-vm.com/guide/getting-started.html),
-and then proceed to add the 'asdf-protonge' plugin and install the version you want.
-``` bash
-asdf plugin add protonge
-
-# Or install a version from a tag
-asdf install protonge latest
-```
-
-It's also possible to use the asdf plugin in Flatpak installations, by customizing the target `compatibilitytools.d` path. For more settings check the [plugin's official documentation](https://github.com/augustobmoura/asdf-protonge).
-
-#### Via [`ProtonPlus`, a proton version manager](https://protonplus.vysp3r.com/)
-
-ProtonPlus is a GUI Frontend for managing proton versions, including GE-Proton. 
-It is a great tool for those who want a more user-friendly way to manage their proton versions.
-
-To install Proton-GE, Select the `Proton-GE` dropdown, and select the version you want to install, or `Proton-GE Latest` to install the latest version and automatically update it when new versions are released.
-
-After every install you need to restart Steam, and [enable proton-ge-custom](#enabling).
-
-#### Native
-
-This section is for those that use the native version of Steam.
-
-1. Download a release from the [Releases](https://github.com/GloriousEggroll/proton-ge-custom/releases) page.
-2. Create a `~/.steam/steam/compatibilitytools.d` directory if it does not exist.
-3. Extract the release tarball into `~/.steam/steam/compatibilitytools.d/`.
-   * `tar -xf GE-Proton*.tar.gz -C ~/.steam/steam/compatibilitytools.d/`.
-4. Restart Steam.
-5. [Enable proton-ge-custom in Steam](#enabling).
-
-*Get the latest GE-Proton release through your terminal. It is assumed that you have coreutils and curl installed:*
-```bash
-# Make a temporary working directory
-echo "Making sure temporary directory exists..."
-mkdir -p /tmp/proton-ge-custom
-cd /tmp/proton-ge-custom
-
-steam_dir=~/.steam/steam
-
-# Verify Steam data directory exists
-if [[ ! -d "$steam_dir" ]]; then
-    echo "Error: Steam (native) data directory not found." >&2
-    echo "Please launch Steam at least once to populate it." >&2
-    exit 1
-fi
-
-# Make a Steam compatibility tools folder if it does not exist
-mkdir -p "$steam_dir/compatibilitytools.d"
-
-# Fetch release info
-echo "Fetching release info..."
-release_json=$(curl -s --max-time 10 \
-    https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest)
-
-if [[ -z "$release_json" || "$release_json" != *'"tag_name"'* ]]; then
-    echo "Error: Failed to fetch release info from GitHub." >&2
-    exit 1
-fi
-
-# Resolve release URL for current architecture
-echo "Fetching release for your arch..."
-
-case "$(uname -m)" in
-    aarch64|arm64) tarball_pattern='\-aarch64\.tar\.gz$' ;;
-    x86_64)        tarball_pattern='\-x86_64\.tar\.gz$' ;;
-    *)
-        echo "Error: Unsupported architecture: $(uname -m)." >&2
-        echo "GE-Proton is only available for x86_64 and aarch64." >&2
-        exit 1
-        ;;
-esac
-
-tarball_url=$(echo "$release_json" |
-    grep browser_download_url |
-    cut -d\" -f4 |
-    grep -E "$tarball_pattern" |
-    head -n1 || true)
-
-tarball_name=$(basename "$tarball_url")
-release_name=${tarball_name%.tar.gz}
-
-if [[ -z "$tarball_url" ]]; then
-    echo "Error: Could not find a matching release for your arch ($(uname -m))." >&2
-    exit 1
-fi
-
-# Skip if already installed
-if [[ -d "$steam_dir/compatibilitytools.d/$release_name" ]]; then
-    echo "Latest release $release_name is already installed."
-    exit 0
-fi
-
-# Resolve checksum URL
-checksum_url=$(echo "$release_json" |
-    grep browser_download_url |
-    cut -d\" -f4 |
-    grep "$release_name.sha512sum$" || true)
-
-if [[ -z "$checksum_url" ]]; then
-    echo "Error: Could not find a checksum for $tarball_name in the release." >&2
-    exit 1
-fi
-
-# Use cached tarball from tmp if valid, resume if incomplete
-if [[ -f "$tarball_name" ]]; then
-    echo "Found cached release: $release_name"
-    echo "Verifying download..."
-
-    if curl -sL "$checksum_url" | sha512sum -c - &>/dev/null; then
-        echo "Cached release OK, skipping download."
-    else
-        echo "Cached release is incomplete, resuming download..."
-        curl -C - -L "$tarball_url" -o "$tarball_name" --progress-bar
-        echo "Verifying download..."
-
-        if ! curl -sL "$checksum_url" | sha512sum -c - &>/dev/null; then
-            echo "Resumed download corrupt, falling back to fresh download..."
-            rm -f "$tarball_name"
-            curl -L "$tarball_url" -o "$tarball_name" --progress-bar
-            echo "Verifying download..."
-
-            if ! curl -sL "$checksum_url" | sha512sum -c -; then
-                echo "Error: Verification failed! The downloaded release may be corrupt." >&2
-                exit 1
-            fi
-        fi
-    fi
-
-# Nuke the temporary working directory and download the tarball
-else
-    echo "Cleaning temporary directory..."
-    rm -rf /tmp/proton-ge-custom
-    mkdir /tmp/proton-ge-custom
-    cd /tmp/proton-ge-custom
-    echo "Downloading release: $release_name..."
-    curl -L "$tarball_url" -o "$tarball_name" --progress-bar
-    echo "Verifying download..."
-
-    if ! curl -sL "$checksum_url" | sha512sum -c -; then
-        echo "Error: Verification failed! The downloaded release may be corrupt." >&2
-        exit 1
-    fi
-fi
-
-# Extract the GE-Proton tarball to the Steam compatibility tools folder
-echo "Extracting $tarball_name to the Steam compatibility tools folder..."
-tar -xf "$tarball_name" -C "$steam_dir/compatibilitytools.d/" \
-    || { echo "Error: Extraction failed!" >&2; exit 1; }
-
-echo "Done :)"
-```
-
-The shell commands above can be run as a script by pasting the commands in a file and adding the following to the top of the file assuming you have 'bash' installed:
-```bash
-#!/bin/bash
-set -euo pipefail
-trap 'echo "Error" >&2' ERR
-```
-
-Save the file and make the script executable by adding the executable bit:
-```bash
-chmod +x file.sh
-```
-
-#### Flatpak
-
-This section is for those that use the Steam Flatpak.
-
-##### Flathub
-
-The Steam Flatpak and [the unofficial build of GE-Proton provided by Flathub](https://github.com/flathub/com.valvesoftware.Steam.CompatibilityTool.Proton-GE) are not supported by GloriousEggroll nor Valve and were not tested with all possible games and cases. They can behave differently from the upstream builds. Use at your own risk.
-
-1. [Add the Flathub repository](https://flatpak.org/setup/).
-2. Run:
-	```bash
-	flatpak install com.valvesoftware.Steam.CompatibilityTool.Proton-GE
-	```
-3. [Enable proton-ge-custom in Steam](#enabling).
-
-##### Manual
-
-1. Download a release from the [Releases](https://github.com/GloriousEggroll/proton-ge-custom/releases) page.
-2. Create a Steam compatibility tools directory at `~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d/` if it does not exist.
-3. Extract the release tarball into `~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d/`.
-   * `tar -xf GE-ProtonVERSION.tar.gz -C ~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d/`
-4. Restart Steam.
-5. [Enable proton-ge-custom in Steam](#enabling).   
-
-*Get the latest GE-Proton release through your terminal. It is assumed that you have coreutils and curl installed:*
-```bash
-# Make a temporary working directory
-echo "Making sure temporary directory exists..."
-mkdir -p /tmp/proton-ge-custom
-cd /tmp/proton-ge-custom
-
-steam_dir=~/.var/app/com.valvesoftware.Steam/data/Steam
-
-# Verify Steam data directory exists
-if [[ ! -d "$steam_dir" ]]; then
-    echo "Error: Steam (flatpak) data directory not found." >&2
-    echo "Please launch Steam at least once to populate it." >&2
-    exit 1
-fi
-
-# Make a Steam compatibility tools folder if it does not exist
-mkdir -p "$steam_dir/compatibilitytools.d"
-
-# Fetch release info
-echo "Fetching release info..."
-release_json=$(curl -s --max-time 10 \
-    https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest)
-
-if [[ -z "$release_json" || "$release_json" != *'"tag_name"'* ]]; then
-    echo "Error: Failed to fetch release info from GitHub." >&2
-    exit 1
-fi
-
-# Resolve release URL for current architecture
-echo "Fetching release for your arch..."
-
-case "$(uname -m)" in
-    aarch64|arm64) tarball_pattern='-aarch64\.tar\.gz$' ;;
-    x86_64)        tarball_pattern='\-x86_64\.tar\.gz$' ;;
-    *)
-        echo "Error: Unsupported architecture: $(uname -m)." >&2
-        echo "GE-Proton is only available for x86_64 and aarch64." >&2
-        exit 1
-        ;;
-esac
-
-tarball_url=$(echo "$release_json" |
-    grep browser_download_url |
-    cut -d\" -f4 |
-    grep -E "$tarball_pattern" |
-    head -n1 || true)
-
-tarball_name=$(basename "$tarball_url")
-release_name=${tarball_name%.tar.gz}
-
-if [[ -z "$tarball_url" ]]; then
-    echo "Error: Could not find a matching release for your arch ($(uname -m))." >&2
-    exit 1
-fi
-
-# Skip if already installed
-if [[ -d "$steam_dir/compatibilitytools.d/$release_name" ]]; then
-    echo "Latest release $release_name is already installed."
-    exit 0
-fi
-
-# Resolve checksum URL
-checksum_url=$(echo "$release_json" |
-    grep browser_download_url |
-    cut -d\" -f4 |
-    grep "$release_name.sha512sum$" || true)
-
-if [[ -z "$checksum_url" ]]; then
-    echo "Error: Could not find a checksum for $tarball_name in the release." >&2
-    exit 1
-fi
-
-# Use cached tarball from tmp if valid, resume if incomplete
-if [[ -f "$tarball_name" ]]; then
-    echo "Found cached release: $release_name"
-    echo "Verifying download..."
-
-    if curl -sL "$checksum_url" | sha512sum -c - &>/dev/null; then
-        echo "Cached release OK, skipping download."
-    else
-        echo "Cached release is incomplete, resuming download..."
-        curl -C - -L "$tarball_url" -o "$tarball_name" --progress-bar
-        echo "Verifying download..."
-
-        if ! curl -sL "$checksum_url" | sha512sum -c - &>/dev/null; then
-            echo "Resumed download corrupt, falling back to fresh download..."
-            rm -f "$tarball_name"
-            curl -L "$tarball_url" -o "$tarball_name" --progress-bar
-            echo "Verifying download..."
-
-            if ! curl -sL "$checksum_url" | sha512sum -c -; then
-                echo "Error: Verification failed! The downloaded release may be corrupt." >&2
-                exit 1
-            fi
-        fi
-    fi
-
-# Nuke the temporary working directory and download the tarball
-else
-    echo "Cleaning temporary directory..."
-    rm -rf /tmp/proton-ge-custom
-    mkdir /tmp/proton-ge-custom
-    cd /tmp/proton-ge-custom
-    echo "Downloading release: $release_name..."
-    curl -L "$tarball_url" -o "$tarball_name" --progress-bar
-    echo "Verifying download..."
-
-    if ! curl -sL "$checksum_url" | sha512sum -c -; then
-        echo "Error: Verification failed! The downloaded release may be corrupt." >&2
-        exit 1
-    fi
-fi
-
-# Extract the GE-Proton tarball to the Steam compatibility tools folder
-echo "Extracting $tarball_name to the Steam compatibility tools folder..."
-tar -xf "$tarball_name" -C "$steam_dir/compatibilitytools.d/" \
-    || { echo "Error: Extraction failed!" >&2; exit 1; }
-
-echo "Done :)"
-```
-
-The shell commands above can be run as a script by pasting the commands in a file and adding the following to the top of the file assuming you have 'bash' installed:
-```bash
-#!/bin/bash
-set -euo pipefail
-trap 'echo "Error" >&2' ERR
-```
-
-Save the file and make the script executable by adding the executable bit:
-```bash
-chmod +x file.sh
-```
-
-#### Snap
-
-This section is for those that use the Steam [Snap](https://snapcraft.io/steam).
-
-This unofficial build isn't supported by GloriousEggroll nor Valve and wasn't tested with all possible games and cases. It can behave differently from the upstream builds. Use at your own risk.
-
-##### Manual
-
-1. Download a release from the [Releases](https://github.com/GloriousEggroll/proton-ge-custom/releases) page.
-2. Create a `~/snap/steam/common/.steam/steam/compatibilitytools.d/` directory if it does not exist.
-3. Extract the release tarball into `~/snap/steam/common/.steam/steam/compatibilitytools.d/`.
-   * `tar -xf GE-ProtonVERSION.tar.gz -C ~/snap/steam/common/.steam/steam/compatibilitytools.d/`
-4. Restart Steam.
-5. [Enable proton-ge-custom in Steam](#enabling).
+> Banner-Proton is an unofficial build. It is **not** GE-Proton, Proton-CachyOS or Valve's Proton, and
+> it is not affiliated with GloriousEggroll, CachyOS or Valve. Please do not report Banner-Proton
+> problems to those projects; open an issue here instead.
+
+Status: **prerelease / proof of concept.** Builds come from GitHub Actions; device testing is still to come.
+
+## How it is put together
+
+Banner-Proton is a fork of [proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)
+(its history is kept on the `ge-master` branch). Wine is built in four tiers, and every tier is a
+tag on the wine branch so it can be bisected or turned off on its own:
+
+| Tier | What | Where | Tag |
+|---|---|---|---|
+| 1 | Valve Proton wine, `bleeding-edge` (the base Proton Experimental's bleeding-edge builds use) | `ValveSoftware/wine` | `bp-11.7-tier1` |
+| 2 | Everything GE-Proton applies to wine (wine-staging, EM-11 wine-wayland, game fixes, hotfixes, video rework, FSR, Reflex, OptiScaler, DS5, Bluetooth LE ...) | GE's own `protonprep` wine section, run unmodified | `bp-11.7-tier2` |
+| 3 | CachyOS game fixes that GE does not already carry | `CachyOS/wine-cachyos` | `bp-11.7-tier3` |
+| 4 | Our portable Wine fixes from the Bannerlator layers | `The412Banner/proton-wine` `proton_11.7.1-GE` | `bp-11.7-tier4` |
+
+The wine source is [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine) branch
+`banner-proton/11.7`; this repository's `wine` submodule points at it. Everything outside wine
+(DXVK, vkd3d-proton, dxvk-nvapi, d7vk, FEX, protonfixes, lsteamclient, the `proton` script, fonts,
+media stack ...) is GE-Proton's, prepared by GE's own `patches/protonprep-valve-staging.sh`
+(`banner-proton/prep.sh` runs it without its wine section, because tier 2 already contains it).
+The `Verify wine tier 2` workflow re-runs GE's wine section on tier 1 and checks the result is
+exactly tier 2.
+
+### Pins (version 11-7.1)
+
+| | Commit |
+|---|---|
+| GE-Proton (`proton-ge-custom` master, includes everything in GE-Proton11-7 and the work after it) | `49c50f4b2546b06cea3493803f18a13bb2a2f0c8` |
+| Valve wine `bleeding-edge` (same commit GE master pins) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
+| CachyOS wine, `cachyos_11.0_20261001/main` (wine of proton-cachyos `cachyos-11.0-20261005-slr`) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
+| Banner-Proton wine, `banner-proton/11.7` | `709d1c14a84338514032e2053bcad02cec91c9ee` |
+
+The machine-readable list is `banner-proton/PINS`; the version is `banner-proton/VERSION`.
+
+## Patch list
+
+### Tier 2: GE-Proton
+
+All of GE-Proton's wine patching at `proton-ge-custom` `49c50f4b`, applied by GE's script section by
+section (one commit per section): the configure revert, EM-11 wine-wayland + wineopenxr + wineland child
+rendering + EM fixups, wine-staging (`patchinstall.py --all` with GE's exclusions plus GE's rebased
+staging sets), GE game patches, hotfixes and backports, pending upstream patches, and GE's custom patches
+(FSR fullscreen hack, NVIDIA Reflex, OptiScaler, GE video rework, proton-ds5-haptic, Bluetooth LE, ...).
+Every patch applied cleanly; nothing was skipped. See GE's script for the full list and its credits.
+
+### Tier 3: CachyOS
+
+Cherry-picked (with `-x`) from CachyOS wine `2ce6b44c`, in this order:
+
+- HACK: ntdll: Add `WINE_DISABLE_SFN` option, fixes Yakuza 5 cutscenes (Pedro Nishiyama)
+- HACK: win32u: Force opaque webviews for Wuthering Waves (NelloKudo)
+- pdh: Avoid access violation in PdhCloseQuery on bad handle (Ziia Shi)
+- powrprof: Stub PowerReadACValueIndex (Ziia Shi)
+- ntdll: Add SystemPowerInformation semi-stub (Etaash Mathamsetty)
+- ntdll: Implement RtlAreLongPathsEnabled (Etaash Mathamsetty)
+- include: Update STORAGE_BUS_TYPE in ntddstor.h; mountmgr.sys: Stub StorageDeviceTrimProperty query (Jactry Zeng)
+- d3d8: Build a valid box in vertex/index buffer Lock (Stefan Dösinger, 2 patches)
+- ddraw: Enumerate the ramp device (Elizabeth Figura); ddraw: Pass the active device to material_activate (Rémi Bernon)
+- wined3d: Remove the "iPixelFormat" field (Elizabeth Figura); Reset internal_format_set when using the backup DC (Zhiyi Zhang); Access the right pixel format in swapchain_gl_present() (Patrick Zacharias, applied by hand at the moved call site)
+- HACK: xaudio2_7: Workaround a crash in Darksiders: Warmastered Edition (NelloKudo; rebased onto GE's DS5 audio tracing, NULL buffer kept valid)
+- mfplat: Handle R8_UINT format in MFCreateDXGISurfaceBuffer() (Nikolay Sivov; library part only)
+
+Already in GE-Proton or Valve wine in some form, so not picked again: the EM wine-wayland, ntoskrnl,
+amdxc/atiadlxx/atidxx and winebus/Steam Input work (Etaash Mathamsetty), the GE-origin hacks CachyOS
+carries (FSR, Reflex, OptiScaler, host block, PSO2, Vanguard, Guilty Gear, Assetto Corsa, RRF flags,
+winealsa channels), AF_UNIX sockets, icuuc/icuin, keyboard layouts, NCryptDecrypt, OLE clipboard,
+the Monster Hunter Wilds audio set, the RDR2/WRC9/Diabotical wine.inf entries, NelloKudo's
+mfsrcsnk/mfreadwrite/WMA/winedmo/evr media fixes, NtUserEnableMouseInPointer, RegCreateKeyTransacted,
+ControlServiceEx, IsNativeVhdBoot, top-down reservation, drive_c case folding.
+
+Deliberately left out:
+
+- Not applicable to an aarch64 build: EAC/EOS syscall forwarding (x86_64 `signal_x86_64.c` only).
+- Conflict with GE's own design: the winegstreamer force/orientation switches, media-converter
+  reverts, raw parser and WM reader stream patches (GE's video rework replaced that code with winedmo).
+- Policy/branding, not game fixes: fsync on by default, Windows 11 by default, "(CachyOS)" version
+  string, font smoothing defaults, dotfiles shown.
+- Features rather than game fixes, left for later: the winepipewire.drv audio driver and system-thread
+  mmdevapi rework (M0n7y5, Alexandre Julliard), futex queue tuning (Marc-Aurel Zent), epoll_wait
+  resolution, AMD FSR4/MLFG (amdxc), d2d1/windowscodecs/dnsapi upstream backports, the ntoskrnl/wdfldr
+  kernel-object series, LTO/clang build changes.
+
+### Tier 4: ours (from `proton_11.7.1-GE`, Bannerlator layer v14)
+
+- `WINE_FORCE_SSBS`: Valve wine already contains Wine MR 12262 (keep the host SSBS bit, ignore reserved
+  CPSR bits); we add only the switch. `WINE_FORCE_SSBS=0` gives the pre-MR behaviour back.
+- `WINEVMEMMAXSIZE` (MB): cap a single NtAllocateVirtualMemory size (inert when unset).
+- ntdll: bounds-check `RtlIsEcCode` (nested access-violation loop unwinding Denuvo frames, Need for Speed Heat).
+- mf/topology_loader: restore the upstream media type when optional insertion fails (NelloKudo).
+- sharedgpures.sys: the earlier shared-resource protocol on D3DKMT sharing (D3D9 to D3D11 video on DXVK before 3.0).
+- rsaenh: hold the public key for the duration of CPVerifySignature.
+- gdiplus: clamp degenerate spans instead of asserting (EA app installer).
+- xinput: survive a transient WAIT_FAILED in the update thread.
+- win32u: MAX_FONT_HANDLES 5000 to 32768.
+- GE game fix `dai_xinput` (Dragon Age: Inquisition controller, Cameron Moore; SteamGameId 1222690 only).
+
+Not carried, with the reason:
+
+- NelloKudo's winegstreamer WMA decoder, output-PTS and media-source retry fixes, and our two
+  winegstreamer duration fixes: GE's video rework removes those winegstreamer files; GE ships its own
+  winedmo WMA decoder and timing.
+- mfsrcsnk SetCurrentPosition seek, mfreadwrite ANY_STREAM / audio alignment / native compressed
+  formats / async SAMPLE_READY timestamp, and the winedmo extension-less URL fix: GE's reworked
+  mfsrcsnk, mfreadwrite and winedmo already do the same thing.
+- "keep winegstreamer the default byte-stream handler, winedmo opt-in": GE's design is winedmo-only.
+- winedmo big-endian PCM rewrite: it only replaced a filter that did not compile against Termux's
+  FFmpeg 8; GE's pinned FFmpeg builds the original.
+- The media-converter environment gates: GE removed them on purpose.
+- rsaenh HMAC inner-hash crash: Valve wine already fixes it.
+- Everything Android specific (bionic patches, sysvshm, shm_utils, 16 KB alignment), lsteamclient
+  server browser, userspace ntsync, DirectAudio, winewayland touch/HDR and the XP theme.
 
 ## Building
 
-1. Clone this repository by executing:
+All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) inside Valve's
+`steamrt4` arm64 Proton SDK image, like GE's aarch64 builds:
 
-```sh
-git clone --recurse-submodules https://github.com/gloriouseggroll/proton-ge-custom
-```
+- `Build Banner-Proton (aarch64)` (`.github/workflows/build-aarch64.yml`): GE's `configure.sh
+  --target-arch=arm64` and `make dist`, split into up to four chained stages that hand the build tree
+  to each other when one runner's time runs out. Then everything is stripped
+  (`strip --strip-unneeded` for ELF, `llvm-strip --strip-unneeded` for PE, no debug files) and packed as
+  `Banner-Proton-<version>-aarch64.tar.gz` plus `.sha512sum`, with the same layout as GE's tarball
+  (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). With "publish" it becomes a prerelease.
+- Caches: ccache for the native and the llvm-mingw cross compilers, the SDK image, and prebuilt
+  DXVK/vkd3d-proton/d7vk/dxvk-nvapi, FEX, FFmpeg and the speech libraries, keyed by their commits.
 
-2. Drop any custom patches into patches/, then open patches/protonprep-valve-staging.sh and add a patch line for them under `#WINE CUSTOM PATCHES` in the same way the others are done.
-
-3. Apply all of the patches in patches/ by running:
-
-```sh
-./patches/protonprep-valve-staging.sh &> patchlog.txt
-```
-
-in the main proton-ge-custom directory. Open `patchlog.txt` and search for "fail" to make sure no patch failures occured. An easy way to do this is like so:
-
-```sh
-grep -i fail patchlog.txt
-grep -i error patchlog.txt 
-```
-
-4. Navigate to the parent directory containing the proton-ge-custom folder.
-
-5. Type the following:
-
-```sh
-mkdir build && cd build
-../configure.sh --build-name=SOME-BUILD-NAME-HERE
-make redist &> log
-```
-
-The build will be placed within the build directory as SOME-BUILD-NAME-HERE.tar.gz.
-
-## Enabling
-
-1. Right click any game in Steam and click `Properties`.
-2. At the bottom of the `Compatibility` tab, Check `Force the use of a specific Steam Play compatibility tool`, then select the desired Proton version.
-3. Launch the game.
-
-## Options
-
-
-###### Enable HDR
-
-It should work if you have:
-
-- A compositor with HDR support
-- A game with HDR support.
-- A monitor with HDR support.
-
-```bash
-PROTON_ENABLE_HDR=1 %command%
-```
-
-> [!NOTE]
-> Setting PROTON_ENABLE_HDR=1 does NOT enable the  Wine Wayland driver. Gamescope
-> can use PROTON_ENABLE_HDR, and automatically enabling native Wine Wayland
-> here would break that path. For HDR outside of gamescope, enable PROTON_ENABLE_HDR=1 
-> AND PROTON_ENABLE_WAYLAND=1 together only when using a native wayland desktop and
-> not using gamescope.
-
-##### Enabling NTSync
-For NTSync to work, your kernel must be version 6.14 or newer and built with `CONFIG_NTSYNC=y` or `CONFIG_NTSYNC=m`. On non-systemd systems, you must also have a `ulimit -Hn` of 524288 or higher.
-If using `CONFIG_NTSYNC=m`, a module loading configuration is required followed by a reboot:
-
-/etc/modules-load.d/ntsync.conf
-```
-ntsync
-```
-You can also manually enable the module without reboot, just keep in mind the above configuration is needed for it to persist after reboots:
-```
-sudo modprobe ntsync
-```
-If on a non-systemd system with an inadequate `ulimit -Hn`, adjusting limits is required followed by a reboot:
-
-/etc/security/limits.d/26-steam-nofile.conf
-```
-*               hard    nofile             524288
-```
-
-##### Enabling FSR 4
-
-To download and install `amdxcffx64.dll` for FSR 4 upgrades in compatible games with FSR 3.1, use:
-
-```bash
-PROTON_FSR4_UPGRADE=1 %command%
-```
-
-Use the same option for RDNA3 GPUs. The old `PROTON_FSR4_RDNA3_UPGRADE` option is obsolete and has no effect; replace it with `PROTON_FSR4_UPGRADE`. GPU, driver, and game compatibility are still required.
-
-The default DLL version is selected from the `fsr_40_drv` entries in the [upscaler manifest](https://loathingkernel.github.io/proton-upscalers/manifest.json), not pinned to a version in Proton. As of September 27, 2026, the default is **4.1.1**. To request a specific available version, use, for example, `PROTON_FSR4_UPGRADE=4.1.1 %command%`. If the requested version is absent from the manifest, the downloader falls back to the latest non-development entry. In particular, `4.0.2` is currently unavailable and requesting it does not select the old DLL.
-
-GE-Proton's DLL downloader remains opt-in: it does not automatically download `amdxcffx64.dll` without enabling this option. This is separate from a game's own FSR support or Wine using a DLL that is already installed. `PROTON_FSR4_INDICATOR=1` enables the FSR upscaling and frame-generation watermarks.
-
-Environment variable options:
-
-Disable Steam Input for the game before using the Sony controller compatibility options below. This allows Wine to use the physical controller's HIDRAW interface instead of Steam's virtual controller.
-
-Wired [VitaPad v.2.0.0](https://github.com/carlelieser/vitapad/releases/tag/v.2.0.0) (`054c:1337`) is exposed as a DualShock 4 v2 by default through HIDRAW, without an opt-in variable or SDL mapping. This maps the face buttons, both sticks, D-pad, Select/Start to Share/Options, and rear-touch L2/R2 and L3/R3. L2/R2 remain digital; rumble, motion and DS4 touchpad input are not available. The existing `PROTON_SONY_DUALSHOCK4_V2_AS_V1=1` option also applies to VitaPad. Unreleased VitaPad builds with a different button layout are not supported by this mapping.
-
-VitaPad DS4 emulation requires read/write access to its `/dev/hidraw*` device. If your distribution's controller rules do not include VitaPad, a system administrator can add this udev rule to `/etc/udev/rules.d/70-vitapad.rules`, reload the rules, and reconnect the device:
-
-```udev
-KERNEL=="hidraw*", ATTRS{idVendor}=="054c", ATTRS{idProduct}=="1337", MODE="0660", TAG+="uaccess"
-```
-
-Without HIDRAW access, Wine retains its normal SDL fallback, which does not provide this DS4 emulation. Explicit `PROTON_USE_SDL`/`PROTON_PREFER_SDL` or HIDRAW-disable options also bypass the emulation. Disable Steam Input when testing native DS4 detection and PlayStation button icons.
-
-| Compat config string  | Environment Variable           | Description  |
-| :-------------------- | :----------------------------- | :----------- |
-|                       | <tt>PROTON_LOG</tt>            | Convenience method for dumping a useful debug log to `$HOME/steam-$APPID.log`. For more thorough logging, use `user_settings.py`. |
-|                       | <tt>PROTON_DUMP_DEBUG_COMMANDS</tt> | When running a game, Proton will write some useful debug scripts for that game into `$PROTON_DEBUG_DIR/proton_$USER/`. |
-|                       | <tt>PROTON_DEBUG_DIR</tt>      | Root directory for the Proton debug scripts, `/tmp` by default. |
-| <tt>wined3d</tt>      | <tt>PROTON_USE_WINED3D</tt>    | Use OpenGL-based wined3d instead of Vulkan-based DXVK for d3d11 and d3d10. This used to be called `PROTON_USE_WINED3D11`, which is now an alias for this same option. |
-| <tt>nod3d12</tt>      | <tt>PROTON_NO_D3D12</tt>       | Disables DX12. |
-| <tt>nod3d11</tt>      | <tt>PROTON_NO_D3D11</tt>       | Disables DX11. |
-| <tt>nod3d10</tt>      | <tt>PROTON_NO_D3D10</tt>       | Disables DX10. |
-| <tt>nod3d9</tt>      | <tt>PROTON_NO_D3D9</tt>        | Disables DX9.  |
-| <tt>noesync</tt>      | <tt>PROTON_NO_ESYNC</tt>       | Do not use eventfd-based in-process synchronization primitives. |
-| <tt>nofsync</tt>      | <tt>PROTON_NO_FSYNC</tt>       | Do not use futex-based in-process synchronization primitives. (Automatically disabled on systems with no `FUTEX_WAIT_MULTIPLE` support.) |
-| <tt>nontsync</tt>      | <tt>PROTON_NO_NTSYNC</tt>       | Do not use the ntsync kernel module for in-process synchronization primitives. |
-| <tt>forcelgadd</tt>   | <tt>PROTON_FORCE_LARGE_ADDRESS_AWARE</tt> | Force Wine to enable the LARGE_ADDRESS_AWARE flag for all executables. |
-|                       | <tt>WINE_DISABLE_EXE_ASLR</tt> | Set to `1` to disable ASLR for executable images while leaving DLL relocation enabled. Use this for applications that require the main executable to remain at its preferred base address, such as some 32-bit applications that store data in otherwise unused code-pointer bits. |
-| <tt>heapdelayfree</tt>| <tt>PROTON_HEAP_DELAY_FREE</tt>| Delay freeing some memory, to work around application use-after-free bugs. |
-|                       | <tt>HOST_LC_ALL</tt>           | Set value to a locale to override all other system locale settings for a game.  This variable should be used instead of `LC_ALL`. |
-| <tt>enablenvapi</tt>  | <tt>PROTON_ENABLE_NVAPI</tt>   | Enable NVIDIA's NVAPI GPU support library. |
-| <tt>noforcelgadd</tt> |                                | Disable forcelgadd. If both this and `forcelgadd` are set, enabled wins. |
-| <tt>oldglstr</tt>     | <tt>PROTON_OLD_GL_STRING</tt>  | Set some driver overrides to limit the length of the GL extension string, for old games that crash on very long extension strings. |
-| <tt>cmdlineappend:</tt>|                               | Append the string after the colon as an argument to the game command. May be specified more than once. Escape commas and backslashes with a backslash. |
-| <tt>xalia or noxalia</tt>               | <tt>PROTON_USE_XALIA</tt>                 | Enable Xalia, a program that can add a gamepad UI for some keyboard/mouse interfaces, or set to 0 to disable. The default is to enable it dynamically based on window contents. |
-| <tt>seccomp</tt>      | <tt>PROTON_USE_SECCOMP</tt>    | Enable seccomp-bpf filter to emulate native syscalls, required for some DRM protections to work. |
-| <tt>nowritewatch</tt> | <tt>PROTON_NO_WRITE_WATCH</tt> | Disable support for memory write watches in ntdll. This should only be applied if you have verified that the game can operate without write watches. This can improves performance for some very specific games. |
-|                       | <tt>WINE_FULLSCREEN_FSR</tt>   | Enable AMD FidelityFX Super Resolution (FSR), use in conjunction with `WINE_FULLSCREEN_FSR_STRENGTH`. Only works in Vulkan games (DXVK and VKD3D-Proton included). |
-|                       | <tt>WINE_FULLSCREEN_FSR_STRENGTH</tt> | AMD FidelityFX Super Resolution (FSR) strength, the default sharpening of 5 is enough without needing modification, but can be changed with 0-5 if wanted. 0 is the maximum sharpness, higher values mean less sharpening. 2 is the AMD recommended default and is set by GE-Proton by default. |
-|                       | <tt>WINE_FULLSCREEN_FSR_CUSTOM_MODE</tt> | Set fake resolution of the screen. This can be useful in games that render in native resolution regardless of the selected resolution. Parameter `WIDTHxHEIGHT` |
-|                       | <tt>WINE_DO_NOT_CREATE_DXGI_DEVICE_MANAGER</tt> | Set to 1 to enable. Required for video playback in some games to not be miscolored (usually tinted pink) |
-|                       | <tt>COPYPREFIX</tt> | Set to 1 to enable. If -steamdeck is used on steam (or SteamDeck=1 is set), copies the game's prefix and shader cache from the game partition to the local steam steamapps folder. Logic is reversed if -steamdeck not enabled (or SteamDeck=0) |
-| `fsr4`               | `PROTON_FSR4_UPGRADE`          | Download `amdxcffx64.dll` for FSR 4 upgrades in compatible FSR 3.1 games, including on RDNA3. Set to `1` for the manifest-selected default, or specify an available version such as `4.1.1`. See [Enabling FSR 4](#enabling-fsr-4) for version selection and compatibility notes. |
-| `fsr4hud`            | `PROTON_FSR4_INDICATOR`        | Enable the FSR upscaling and frame-generation watermarks (`FSR_WATERMARK=1` and `FSR_FG_WATERMARK=1`). |
-| `fsr3`               | `PROTON_FSR3_UPGRADE`          |                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `dlss`               | `PROTON_DLSS_UPGRADE`          | Automatically download and use newer versions of `nvngx_dlss(d\|g).dll` DLLs. Version to download can be specified by supplying it as a value, like so `PROTON_DLSS_UPGRADE="310.2"`, instead of `1`, to download version `310.2.1.0`. This option also sets `DXVK_NVAPI_DRS_SETTINGS` to use the latest preset. If you provide your own config for it through this environment variable, your configuration is going to be applied.. |
-| `dlsshud`            | `PROTON_DLSS_INDICATOR`        | Enable the DLSS indicator through DXVK-NVAPI. This is separate from `PROTON_FSR4_INDICATOR`. |
-| `xess`               | `PROTON_XESS_UPGRADE`          |                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `sdlinput`           | `PROTON_USE_SDL` or `PROTON_PREFER_SDL` | Uses SDL input instead of HIDRAW/Steam Input. |
-|                      | `PROTON_SONY_DUALSENSE_EDGE_AS_DUALSENSE` | Expose a native DualSense Edge as a regular DualSense to games without Edge support. Enabled automatically for Diablo IV; set to `0` to disable. Skipped when a Steam Input virtual controller is present. Physical controller identity and native reports are preserved for audio, haptics, and hotplug handling. |
-|                      | `PROTON_SONY_DUALSENSE_AS_DUALSHOCK4` | Set to `1` to expose a DualSense or DualSense Edge as a DualShock 4 v2. Use this for older games that support DS4 correctly but have missing or broken DualSense mappings. This preserves the game's DS4 button mappings and icons while translating input, rumble, lightbar, and feature reports. When the Steam Input fallback is active, it also advertises the detected DualSense as a DS4 profile. |
-|                      | `PROTON_SONY_DUALSHOCK4_V2_AS_V1` | Set to `1` to expose a DualShock 4 v2 as a DualShock 4 v1. When combined with `PROTON_SONY_DUALSENSE_AS_DUALSHOCK4=1`, a DualSense or DualSense Edge is exposed directly as DS4 v1. Input, output, feature reports, controller audio, haptics, and hotplug handling continue to use the physical controller internally. |
-|                      | `PROTON_SONY_HIDRAW_XINPUT` | Set to `1` to translate a DualShock 4, DualSense, or DualSense Edge HIDRAW device to XInput, including conventional two-motor rumble. Use this when a game has missing or incorrect native Sony mappings. The controller mappings are corrected, but the game's displayed button icons may not change. |
-|                      | `PROTON_SONY_AUTO_XINPUT` | Enabled by default, replacing the general per-game forced-XInput list. Provide a Sony XInput fallback and matching Xbox DirectInput VID/PID while keeping native HID available; withdraw that controller's automatic fallback and identity projection when the process consumes native HID input. Where available, Steam Input queries report DS4 or DS5 identity and button origins. Real Steam Input and explicit Sony compatibility overrides take priority. Set to `0` to disable. See [controller details](docs/CONTROLLERS.md#automatic-sony-xinput-fallback). |
-|                      | `PROTON_STEAMINPUT_FALLBACK` | Set to `1` to provide an XInput-backed replacement for the Steam Input interface required by some games. This allows controller support outside Steam and can work around unavailable Steam Input profile switching under Wine-Wayland. When native Steam Input is enabled for the current session, the native Steam controller and mappings remain authoritative and the fallback stays inactive. Combine it with `PROTON_SONY_HIDRAW_XINPUT=1` for Sony controllers; Xbox controllers can use the fallback directly. When active, the fallback detects connected DS4 and DualSense/Edge devices dynamically, updates the advertised profile after hotplugging, and defaults to Xbox for other controllers or when none are connected. `PROTON_STEAMINPUT_XINPUT_FALLBACK=1` remains supported as a compatibility alias. |
-|                      | `PROTON_STEAMINPUT_LAYOUT_XBOX` | Force the fallback controller to use the Xbox One profile instead of automatic layout detection. |
-|                      | `PROTON_STEAMINPUT_LAYOUT_DS4` | Force the fallback controller to use the DualShock 4 profile instead of automatic layout detection. |
-|                      | `PROTON_STEAMINPUT_LAYOUT_DS5` | Force the fallback controller to use the DualSense profile instead of automatic layout detection. |
-| `wayland`            | `PROTON_USE_WAYLAND` or `PROTON_ENABLE_WAYLAND` | Enables the Wayland driver. |
-|                      | `PROTON_USE_X11_EXCLUSIVE` | Under Wine-Wayland, use `winex11.drv` only for the executable specified by this value. Accepts an exact executable basename such as `Launcher.exe` or a case-insensitive Windows path fragment such as `Vendor\\Launcher.exe`; other processes remain on Wine-Wayland. |
-| `winebth`            | `PROTON_ENABLE_WINEBTH`        | Enables `winebth.sys`, Wine's Bluetooth driver, which is disabled by default. Needed for Bluetooth LE devices such as smart trainers and controllers in Zwift or Rouvy. Requires BlueZ. |
-| `wow64`              | `PROTON_USE_WOW64`             | Enables wow64. |
-|                      | `WAYLANDDRV_PRIMARY_MONITOR`   | Specify primary monitor where the value is something like `eDP-1`. Requires the Wayland driver. |
-|                      | `PROTON_ENABLE_MEDIACONV`      | Enable media converter for winegstreamer. This is not needed for winedmo, since the mediaconverter implementation of the codecs doesn't override the underlying implementation. |
-|                      | `WAYLANDDRV_RAWINPUT`          | A value of 0 disables unaccelerated input and uses accelerated input. Any positive real number (like 0.5) adjusts the sensitivity of rawinput. Requires the Wayland driver. |
-| `lowlatencylayer`    | `LOW_LATENCY_LAYER`            | Enables [low_latency_layer](https://github.com/Korthos-Software/low_latency_layer). |
+Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.GE-Proton.md), with
+`banner-proton/prep.sh` instead of `patches/protonprep-valve-staging.sh` and
+`../configure.sh --target-arch=arm64 --build-name=Banner-Proton-<version>-aarch64 --display-name="Banner-Proton <version>"`.
 
 ## Credits
 
-The GE-Proton project contains some of my personal tweaks to Proton, but a large amount of the patches, rebases and fixes come from numerous people's projects. 
+- [Valve](https://github.com/ValveSoftware/Proton) for Proton and its wine, and the Steam Linux Runtime SDK.
+- [GloriousEggroll](https://github.com/GloriousEggroll/proton-ge-custom) and the GE-Proton contributors for GE-Proton and its patch set.
+- The [Wine](https://gitlab.winehq.org/wine/wine) and [wine-staging](https://gitlab.winehq.org/wine/wine-staging) developers.
+- [CachyOS](https://github.com/CachyOS/proton-cachyos) for proton-cachyos and wine-cachyos.
+- NelloKudo (Nello De Gregoris) for the media and game fixes, Etaash Mathamsetty for the EM work,
+  and every patch author named above and in the commit history.
+- FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and the other projects bundled by GE-Proton.
 
-While I tend to get credited for my builds, a lot of the work that goes into it are from other people as well. I'd like to take some time to point a few of these people out of recognition. 
+## License
 
-In future builds, I plan to make clearer and more informative Git commits, as well as attempt to give these people further crediting, as my README may not be sufficient in doing so.
-
-### TKG (Etienne Juvigny)
-
-- https://www.patreon.com/tkglitch
-- https://github.com/Frogging-Family/wine-tkg-git
-
-I and many others owe TKG. In regards to both Wind and Proton. He has dedicated a lot of time (2+ years at least) to rebasing Wine and Proton patches, as well as making his own contributions. Before he came along, I did some rebasing work, and mainly only released things for Arch. These days he almost always beats me to rebasing, and it saves myself and others a **lot** of work.
-
-### Guy1524 (Derek Lesho)
-
-- https://github.com/Guy1524
-
-Derek was responsible for the original raw input patches, as well as several various game fixes in the past, just to name a few: MK11, FFXV, MHW, Steep, AC Odyssey FS fix. He has also done a massive amount of work on Media Foundation/MFPlat, which should be hopefully working very soon.
-
-### Joshie (Joshua Ashton)
-
-- https://github.com/Joshua-Ashton/d9vk
-
-Joshua is the creator of D9VK and also a huge contributor of DXVK. He is also known for his recent DOOM Eternal WINE fixes and also many of the Vulkan tweaks and fixes used, such as FS hack interger scaling.
-
-### doitsujin/ドイツ人 (Philip Rebohle)
-
-- https://github.com/doitsujin/dxvk
-
-Philip is the creator of DXVK and a heavy contributor of VKD3D. He also put up a lot of my bug reporting for Warframe years ago when DXVK started.
-
-### HansKristian/themaister (Hans-Kristian Arntzen)
-
-- https://github.com/HansKristian-Work
-
-Hans-Kristian is a heavy contributor of VKD3D and he also created a lot of WINE patches that allowed WoW to work.
-
-### flibitijibibo (Ethan Lee)
-
-- https://github.com/sponsors/flibitijibibo
-- https://fna-xna.github.io/
-
-Ethan is the creator of FAudio, and he also listened to my Warframe bug reports years ago.
-
-### simmons-public (Chris Simmons)
-
-- https://github.com/simons-public
-
-Chris is the creator of the original 'protonfixes' project. The portions of 'protonfixes' I've imported are what allow customizations to be made to prefixes for various Proton games. Without 'protonfixes' many games would still be broken and/or require manual prefix modification.
-
-### wine-staging maintainers
-
-I also of course need to thank the wine-staging maintainers: Alistair Leslie-Hughes, Zebediah Figura and Paul Gofman
-
-They have contributed many patches to staging, far beyond what I have done, as well as kept up with regular rebasing. A lot of times when bug reports come to me, if it has to do with staging I end up testing and relaying information to these guys in order to get issues resolved.
-
-### Reporters
-
-Additionally, a thank you is owed to Andrew Aeikum (aeikum), and kisak (kisak-valve) for regularly keeping me in the loop with Proton and fsync patches, as well as accepting pull requests I've made to fix Proton build system issues, or listening to bug reports on early Proton patches before they reach a Proton release.
-
-### Patrons
-
-And finally - to all of my patrons that have supported me, thank you so much. It's because of you that I've been able to keep this project going, getting bug fixes reported, getting Proton/Wine issues fixed, getting various hardware and/or game fixes handled, and so on. Thanks to you, I have been able to use the spare budget in order to both help support the other people that make my project possible, as well as get things necessary for testing such as new game releases or specific hardware that hits odd issues. It's had a huge effect not just for this project, but a large trickle down effect.
-
-My wine-staging co-maintainers are often able to ask me for testing games, or testing on different hardware if they don't have access to it. This also trickles into both Proton bug reporting and Lutris bug reporting, as I'm able to provide bug testing and feedback and custom builds and upgrades to them as well. I'm also able to test driver related issues for things such as mesa and getting things reported + patched. This in turn leads to early patches for Mesa, the kernel, VKD3D, and other packages on my copr repositories as well. The trickle down effect is just one gigantic awesome rabbit hole for getting things fixed. Thank you once again.
-
-## Donations
-
-For anyone else interested, my Patreon can be found here:
-
-https://www.patreon.com/gloriouseggroll
-
-
-## Tested games
-
-| Name                                                | SteamDB link                                 | ProtonDB link                               | Steambase                                   | Has protonfixes    | Has Media Foundation fixes |
-| --------------------------------------------------- | -------------------------------------------- | -------------------------------------------- | -------------------------------------------- | ------------------ | -------------------------- |
-| Acceleration of SUGURI 2                            | [SteamDB](https://steamdb.info/app/390710)   | [ProtonDB](https://protondb.com/app/390710)  | [Steambase](https://steambase.io/apps/390710) | :heavy_check_mark: | :heavy_check_mark:         |
-| Age of Empires: Definitive Edition                  | [SteamDB](https://steamdb.info/app/1017900)  | [ProtonDB](https://protondb.com/app/1017900) | [Steambase](https://steambase.io/apps/1017900) | :x:                | :heavy_check_mark:         |
-| Age of Empires II: Definitive Edition               | [SteamDB](https://steamdb.info/app/813780)   | [ProtonDB](https://protondb.com/app/813780)  | [Steambase](https://steambase.io/apps/813780) | :x:                | :heavy_check_mark:         |
-| Age of Empires III: Definitive Edition              | [SteamDB](https://steamdb.info/app/933110)   | [ProtonDB](https://protondb.com/app/933110)  | [Steambase](https://steambase.io/apps/933110) | :x:                | :heavy_check_mark:         |
-| Age of Mythology: Extended Edition                  | [SteamDB](https://steamdb.info/app/266840)   | [ProtonDB](https://protondb.com/app/266840)  | [Steambase](https://steambase.io/apps/266840) | :x:                | :heavy_check_mark:         |
-| AirMech Strike                                      | [SteamDB](https://steamdb.info/app/206500)   | [ProtonDB](https://protondb.com/app/206500)  | [Steambase](https://steambase.io/apps/206500) | :x:                | :heavy_check_mark:         |
-| American Fugitive                                   | [SteamDB](https://steamdb.info/app/934780)   | [ProtonDB](https://protondb.com/app/934780)  | [Steambase](https://steambase.io/apps/934780) | :heavy_check_mark: | :heavy_check_mark:         |
-| Anomaly Defenders                                   | [SteamDB](https://steamdb.info/app/294750)   | [ProtonDB](https://protondb.com/app/294750)  | [Steambase](https://steambase.io/apps/294750) | :x:                | :x:                        |
-| Apex Legends                                        | [SteamDB](https://steamdb.info/app/1172470)  | [ProtonDB](https://protondb.com/app/1172470) | [Steambase](https://steambase.io/apps/1172470) | :x:                | :heavy_check_mark:         |
-| Arkania                                             |                                              |                       |                                          | :x:                | :x:                        |
-| Assetto Corsa                                       | [SteamDB](https://steamdb.info/app/244210)   | [ProtonDB](https://protondb.com/app/244210)  | [Steambase](https://steambase.io/apps/244210) | :x:                | :heavy_check_mark:         |
-| Astroneer                                           | [SteamDB](https://steamdb.info/app/361420)   | [ProtonDB](https://protondb.com/app/361420)  | [Steambase](https://steambase.io/apps/361420) | :heavy_check_mark: | :heavy_check_mark:         |
-| Aven Colony                                         | [SteamDB](https://steamdb.info/app/484900)   | [ProtonDB](https://protondb.com/app/484900)  | [Steambase](https://steambase.io/apps/484900) | :heavy_check_mark: | :heavy_check_mark:         |
-| Baldur's Gate 3                                     | [SteamDB](https://steamdb.info/app/1086940)  | [ProtonDB](https://protondb.com/app/1086940) | [Steambase](https://steambase.io/apps/1086940) | :heavy_check_mark: | :x:                        |
-| Batman Arkham Asylum                                | [SteamDB](https://steamdb.info/app/35140)    | [ProtonDB](https://protondb.com/app/35140)   | [Steambase](https://steambase.io/apps/35140)   | :heavy_check_mark: | :x:                        |
-| Batman Arkham Knight                                | [SteamDB](https://steamdb.info/app/208650)   | [ProtonDB](https://protondb.com/app/208650)  | [Steambase](https://steambase.io/apps/208650)  | :heavy_check_mark: | :x:                        |
-| Battlefield: Bad Company 2                          | [SteamDB](https://steamdb.info/app/24960)    | [ProtonDB](https://protondb.com/app/24960)   | [Steambase](https://steambase.io/apps/24960)   | :heavy_check_mark: | :x:                        |
-| BeamNG.drive                                        | [SteamDB](https://steamdb.info/app/284160)   | [ProtonDB](https://protondb.com/app/284160)  | [Steambase](https://steambase.io/apps/284160)  | :heavy_check_mark: | :x:                        |
-| Bejeweled 3                                         | [SteamDB](https://steamdb.info/app/78000)    | [ProtonDB](https://protondb.com/app/78000)   | [Steambase](https://steambase.io/apps/78000)   | :heavy_check_mark: | :x:                        |
-| Beyond Good and Evil                                | [SteamDB](https://steamdb.info/app/15130)    | [ProtonDB](https://protondb.com/app/15130)   | [Steambase](https://steambase.io/apps/15130)   | :heavy_check_mark: | :x:                        |
-| BioShock 2 Remastered                               | [SteamDB](https://steamdb.info/app/409720)   | [ProtonDB](https://protondb.com/app/409720)  | [Steambase](https://steambase.io/apps/409720)  | :heavy_check_mark: | :x:                        |
-| BIT.TRIP BEAT                                       | [SteamDB](https://steamdb.info/app/205070)   | [ProtonDB](https://protondb.com/app/205070)  | [Steambase](https://steambase.io/apps/205070)  | :heavy_check_mark: | :x:                        |
-| BIT.TRIP RUNNER                                     | [SteamDB](https://steamdb.info/app/63710)    | [ProtonDB](https://protondb.com/app/63710)   | [Steambase](https://steambase.io/apps/63710)   | :heavy_check_mark: | :x:                        |
-| BlazBlue Centralfiction                             | [SteamDB](https://steamdb.info/app/586140)   | [ProtonDB](https://protondb.com/app/586140)  | [Steambase](https://steambase.io/apps/586140)  | :x:                | :heavy_check_mark:         |
-| BlazBlue: Chronophantasma Extend                    | [SteamDB](https://steamdb.info/app/388750)   | [ProtonDB](https://protondb.com/app/388750)  | [Steambase](https://steambase.io/apps/388750)  | :heavy_check_mark: | :x:                        |
-| Blood and Bacon                                     | [SteamDB](https://steamdb.info/app/434570)   | [ProtonDB](https://protondb.com/app/434570)  | [Steambase](https://steambase.io/apps/434570)  | :heavy_check_mark: | :x:                        |
-| Bloodstained: Ritual of the Night                   | [SteamDB](https://steamdb.info/app/692850)   | [ProtonDB](https://protondb.com/app/692850)  | [Steambase](https://steambase.io/apps/692850)  | :x:                | :heavy_check_mark:         |
-| Borderlands 2                                       | [SteamDB](https://steamdb.info/app/49520)    | [ProtonDB](https://protondb.com/app/49520)   | [Steambase](https://steambase.io/apps/49520)   | :heavy_check_mark: | :x:                        |
-| Borderlands 3                                       | [SteamDB](https://steamdb.info/app/397540)   | [ProtonDB](https://protondb.com/app/397540)  | [Steambase](https://steambase.io/apps/397540)  | :heavy_check_mark: | :heavy_check_mark:         |
-| Call of Duty (2003)                                 | [SteamDB](https://steamdb.info/app/2620)     | [ProtonDB](https://protondb.com/app/2620)    | [Steambase](https://steambase.io/apps/2620)   | :heavy_check_mark: | :x:                        |
-| Call of Duty: Black Ops III                         | [SteamDB](https://steamdb.info/app/311210)   | [ProtonDB](https://protondb.com/app/311210)  | [Steambase](https://steambase.io/apps/311210) | :x:                | :heavy_check_mark:         |
-| Catherine Classic                                   | [SteamDB](https://steamdb.info/app/893180)   | [ProtonDB](https://protondb.com/app/893180)  | [Steambase](https://steambase.io/apps/893180) | :heavy_check_mark: | :x:                        |
-| Chantelise - A Tale of Two Sisters                  | [SteamDB](https://steamdb.info/app/70420)    | [ProtonDB](https://protondb.com/app/70420)   | [Steambase](https://steambase.io/apps/70420)  | :heavy_check_mark: | :x:                        |
-| Conan Exiles                                        | [SteamDB](https://steamdb.info/app/440900)   | [ProtonDB](https://protondb.com/app/440900)  | [Steambase](https://steambase.io/apps/440900) | :heavy_check_mark: | :x:                        |
-| Crashday Redline Edition                            | [SteamDB](https://steamdb.info/app/508980)   | [ProtonDB](https://protondb.com/app/508980)  | [Steambase](https://steambase.io/apps/508980) | :heavy_check_mark: | :x:                        |
-| Crazy Machines 3                                    | [SteamDB](https://steamdb.info/app/351920)   | [ProtonDB](https://protondb.com/app/351920)  | [Steambase](https://steambase.io/apps/351920) | :x:                | :heavy_check_mark:         |
-| Cryostasis                                          | [SteamDB](https://steamdb.info/app/7850)     | [ProtonDB](https://protondb.com/app/7850)    | [Steambase](https://steambase.io/apps/7850)   | :heavy_check_mark: | :x:                        |
-| Crysis                                              | [SteamDB](https://steamdb.info/app/17300)    | [ProtonDB](https://protondb.com/app/17300)   | [Steambase](https://steambase.io/apps/17300)  | :heavy_check_mark: | :x:                        |
-| Danganronpa V3: Killing Harmony                     | [SteamDB](https://steamdb.info/app/567640)   | [ProtonDB](https://protondb.com/app/567640)  | [Steambase](https://steambase.io/apps/567640) | :x:                | :heavy_check_mark:         |
-| Dark Souls: Prepare To Die Edition                  | [SteamDB](https://steamdb.info/app/211420)   | [ProtonDB](https://protondb.com/app/211420)  | [Steambase](https://steambase.io/apps/211420) | :heavy_check_mark: | :x:                        |
-| Dark Souls: Remastered                              | [SteamDB](https://steamdb.info/app/570940)   | [ProtonDB](https://protondb.com/app/570940)  | [Steambase](https://steambase.io/apps/570940) | :heavy_check_mark: | :x:                        |
-| DEAD OR ALIVE 5 Last Round: Core Fighters           | [SteamDB](https://steamdb.info/app/311730)   | [ProtonDB](https://protondb.com/app/311730)  | [Steambase](https://steambase.io/apps/311730) | :heavy_check_mark: | :x:                        |
-| Destiny 2                                           | [SteamDB](https://steamdb.info/app/1085660)  | [ProtonDB](https://protondb.com/app/1085660) | [Steambase](https://steambase.io/apps/1085660) | :heavy_check_mark: | :x:                        |
-| Devil May Cry 5                                     | [SteamDB](https://steamdb.info/app/601150)   | [ProtonDB](https://protondb.com/app/601150)  | [Steambase](https://steambase.io/apps/601150) | :x:                | :heavy_check_mark:         |
-| Divinity Original Sin 2 - Definitive Edition        | [SteamDB](https://steamdb.info/app/435150)   | [ProtonDB](https://protondb.com/app/435150)  | [Steambase](https://steambase.io/apps/435150) | :heavy_check_mark: | :x:                        |
-| Doom (2016)                                         | [SteamDB](https://steamdb.info/app/379720)   | [ProtonDB](https://protondb.com/app/379720)  | [Steambase](https://steambase.io/apps/379720) | :heavy_check_mark: | :x:                        |
-| Fall Guys: Ultimate Knockout                        | [SteamDB](https://steamdb.info/app/1097150)  | [ProtonDB](https://protondb.com/app/1097150) | [Steambase](https://steambase.io/apps/1097150) | :heavy_check_mark: | :x:                         |
-| Fallout 3                                           | [SteamDB](https://steamdb.info/app/22300)    | [ProtonDB](https://protondb.com/app/22300)   | [Steambase](https://steambase.io/apps/22300)   | :heavy_check_mark: | :x:                         |
-| Fallout 4                                           | [SteamDB](https://steamdb.info/app/377160)   | [ProtonDB](https://protondb.com/app/377160)  | [Steambase](https://steambase.io/apps/377160)  | :heavy_check_mark: | :x:                         |
-| Far Cry 5                                           | [SteamDB](https://steamdb.info/app/552520)   | [ProtonDB](https://protondb.com/app/552520)  | [Steambase](https://steambase.io/apps/552520)  | :heavy_check_mark: | :x:                         |
-| FINAL FANTASY X/X-2 HD Remaster                     | [SteamDB](https://steamdb.info/app/359870)   | [ProtonDB](https://protondb.com/app/359870)  | [Steambase](https://steambase.io/apps/359870)  | :heavy_check_mark: | :x:                         |
-| FINAL FANTASY IX                                    | [SteamDB](https://steamdb.info/app/377840/) | [ProtonDB](https://protondb.com/app/377840)  | [Steambase](https://steambase.io/apps/377840)  | :heavy_check_mark: | :x:                         |
-| FINAL FANTASY XIII                                  | [SteamDB](https://steamdb.info/app/292120/) | [ProtonDB](https://protondb.com/app/292120)  | [Steambase](https://steambase.io/apps/292120)  | :heavy_check_mark: | :x:                         |
-| FINAL FANTASY XIV Online                            | [SteamDB](https://steamdb.info/app/39210/)  | [ProtonDB](https://protondb.com/app/39210)   | [Steambase](https://steambase.io/apps/39210)   | :heavy_check_mark: | :x:                         |
-| Forts                                               | [SteamDB](https://steamdb.info/app/410900)   | [ProtonDB](https://protondb.com/app/410900)  | [Steambase](https://steambase.io/apps/410900)  | :heavy_check_mark: | :x:                         |
-| Gears 5                                             | [SteamDB](https://steamdb.info/app/1097840)  | [ProtonDB](https://protondb.com/app/1097840) | [Steambase](https://steambase.io/apps/1097840) | :heavy_check_mark: | :x:                         |
-| Gothic 1                                            | [SteamDB](https://steamdb.info/app/65540)    | [ProtonDB](https://protondb.com/app/65540)   | [Steambase](https://steambase.io/apps/65540)   | :heavy_check_mark: | :x:                         |
-| Gothic II: Gold Edition                             | [SteamDB](https://steamdb.info/app/39510)    | [ProtonDB](https://protondb.com/app/39510)   | [Steambase](https://steambase.io/apps/39510)   | :heavy_check_mark: | :x:                         |
-| Gothic 3                                            | [SteamDB](https://steamdb.info/app/39500)    | [ProtonDB](https://protondb.com/app/39500)   | [Steambase](https://steambase.io/apps/39500)   | :heavy_check_mark: | :x:                         |
-| Gothic 3: Forsaken Gods Enhanced Edition            | [SteamDB](https://steamdb.info/app/65600)    | [ProtonDB](https://protondb.com/app/65600)   | [Steambase](https://steambase.io/apps/65600)   | :heavy_check_mark: | :x:                         |
-| Grim Dawn                                           | [SteamDB](https://steamdb.info/app/219990)   | [ProtonDB](https://protondb.com/app/219990)  | [Steambase](https://steambase.io/apps/219990)  | :heavy_check_mark: | :x:                         |
-| GT Legends                                          | [SteamDB](https://steamdb.info/app/44690)    | [ProtonDB](https://protondb.com/app/44690)   | [Steambase](https://steambase.io/apps/44690)   | :heavy_check_mark: | :x:                         |
-| GUILTY GEAR XX ACCENT CORE PLUS R                   | [SteamDB](https://steamdb.info/app/348550)   | [ProtonDB](https://protondb.com/app/348550)  | [Steambase](https://steambase.io/apps/348550)  | :heavy_check_mark: | :x:                         |
-| Halo: The Master Chief Collection                   | [SteamDB](https://steamdb.info/app/976730)   | [ProtonDB](https://protondb.com/app/976730)  | [Steambase](https://steambase.io/apps/976730)  | :heavy_check_mark: | :x:                         |
-| Haven                                               | [SteamDB](https://steamdb.info/app/983970)   | [ProtonDB](https://protondb.com/app/983970)  | [Steambase](https://steambase.io/apps/983970)  | :x:                 | :heavy_check_mark:          |
-| Heavy Rain                                          | [SteamDB](https://steamdb.info/app/960910)   | [ProtonDB](https://protondb.com/app/960910)  | [Steambase](https://steambase.io/apps/960910)  | :heavy_check_mark: | :x:                         |
-| HighFleet                                           | [SteamDB](https://steamdb.info/app/1434950)  | [ProtonDB](https://protondb.com/app/1434950) | [Steambase](https://steambase.io/apps/1434950) | :heavy_check_mark: | :x:                         |
-| IMSCARED                                            | [SteamDB](https://steamdb.info/app/429720)   | [ProtonDB](https://protondb.com/app/429720)  | [Steambase](https://steambase.io/apps/429720)  | :heavy_check_mark: | :x:                         
-| Industries of Titan                                 | [SteamDB](https://steamdb.info/app/427940)   | [ProtonDB](https://protondb.com/app/427940)  | [Steambase](https://steambase.io/apps/427940)  | :x:                | :heavy_check_mark:         |
-| Injustice 2                                         | [SteamDB](https://steamdb.info/app/627270)   | [ProtonDB](https://protondb.com/app/627270)  | [Steambase](https://steambase.io/apps/627270)  | :heavy_check_mark: | :heavy_check_mark:         |
-| JUMP FORCE                                          | [SteamDB](https://steamdb.info/app/816020)   | [ProtonDB](https://protondb.com/app/816020)  | [Steambase](https://steambase.io/apps/816020)  | :heavy_check_mark: | :x:                         |
-| L.A. Noire                                          | [SteamDB](https://steamdb.info/app/110800)   | [ProtonDB](https://protondb.com/app/110800)  | [Steambase](https://steambase.io/apps/110800)  | :heavy_check_mark: | :x:                         |
-| LEGO Batman 2: DC Super Heroes                      | [SteamDB](https://steamdb.info/app/213330)   | [ProtonDB](https://protondb.com/app/213330)  | [Steambase](https://steambase.io/apps/213330)  | :heavy_check_mark: | :x:                         |
-| LEGO The Lord of the Rings                          | [SteamDB](https://steamdb.info/app/214510)   | [ProtonDB](https://protondb.com/app/214510)  | [Steambase](https://steambase.io/apps/214510)  | :heavy_check_mark: | :x:                         |
-| Little Nightmares                                   | [SteamDB](https://steamdb.info/app/424840)   | [ProtonDB](https://protondb.com/app/424840)  | [Steambase](https://steambase.io/apps/424840)  | :heavy_check_mark: | :x:                         |
-| Lord of the Rings: War in the North                 | [SteamDB](https://steamdb.info/app/32800)    | [ProtonDB](https://protondb.com/app/32800)   | [Steambase](https://steambase.io/apps/32800)   | :heavy_check_mark: | :x:                         |
-| Mafia II Definitive Edition                         | [SteamDB](https://steamdb.info/app/1030830)  | [ProtonDB](https://protondb.com/app/1030830) | [Steambase](https://steambase.io/apps/1030830) | :heavy_check_mark: | :x:                         |
-| Marvel's Avengers                                   | [SteamDB](https://steamdb.info/app/997070)   | [ProtonDB](https://protondb.com/app/997070)  | [Steambase](https://steambase.io/apps/997070)  | :heavy_check_mark: | :x:                         |
-| Mass Effect Legendary Edition                       | [SteamDB](https://steamdb.info/app/1328670)  | [ProtonDB](https://protondb.com/app/1328670) | [Steambase](https://steambase.io/apps/1328670) | :heavy_check_mark: | :x:                         |
-| Metro 2033                                          | [SteamDB](https://steamdb.info/app/43110)    | [ProtonDB](https://protondb.com/app/43110)   | [Steambase](https://steambase.io/apps/43110)   | :heavy_check_mark: | :x:                         |
-| Microsoft Flight Simulator Game of the Year Edition | [SteamDB](https://steamdb.info/app/1250410)  | [ProtonDB](https://protondb.com/app/1250410) | [Steambase](https://steambase.io/apps/1250410) | :heavy_check_mark: | :x:                         |
-| Monster Hunter Rise                                 | [SteamDB](https://steamdb.info/app/1446780)  | [ProtonDB](https://protondb.com/app/1446780) | [Steambase](https://steambase.io/apps/1446780) | :x:                | :heavy_check_mark:         |
-| Mortal Kombat 11                                    | [SteamDB](https://steamdb.info/app/976310)   | [ProtonDB](https://protondb.com/app/976310)  | [Steambase](https://steambase.io/apps/976310)  | :heavy_check_mark: | :heavy_check_mark:         |
-| Mortal Kombat X                                     | [SteamDB](https://steamdb.info/app/307780)   | [ProtonDB](https://protondb.com/app/307780)  | [Steambase](https://steambase.io/apps/307780)  | :heavy_check_mark: | :x:                         |
-| Mutant Year Zero: Road to Eden                      | [SteamDB](https://steamdb.info/app/760060)   | [ProtonDB](https://protondb.com/app/760060)  | [Steambase](https://steambase.io/apps/760060)  | :x:                | :heavy_check_mark:         |
-| Resident Evil 6                                     | [SteamDB](https://steamdb.info/app/221040)   | [ProtonDB](https://protondb.com/app/221040)  | [Steambase](https://steambase.io/apps/221040)  | :heavy_check_mark: | :heavy_check_mark:         |
-| Resident Evil 7 Biohazard                           | [SteamDB](https://steamdb.info/app/418370)   | [ProtonDB](https://protondb.com/app/418370)  | [Steambase](https://steambase.io/apps/418370)  | :x:                | :heavy_check_mark:         |
-| Resident Evil 8 Village                             | [SteamDB](https://steamdb.info/app/1196590)  | [ProtonDB](https://protondb.com/app/1196590) | [Steambase](https://steambase.io/apps/1196590) | :x:                | :heavy_check_mark:         |
-| Resident Evil Revelations                           | [SteamDB](https://steamdb.info/app/222480)   | [ProtonDB](https://protondb.com/app/222480)  | [Steambase](https://steambase.io/apps/222480)  | :heavy_check_mark: | :heavy_check_mark:         |
-| Resident Evil Revelations 2                         | [SteamDB](https://steamdb.info/app/287290)   | [ProtonDB](https://protondb.com/app/287290)  | [Steambase](https://steambase.io/apps/287290)  | :heavy_check_mark: | :heavy_check_mark:         |
-| Rise of Nations: Extended Edition                   | [SteamDB](https://steamdb.info/app/287450)   | [ProtonDB](https://protondb.com/app/287450)  | [Steambase](https://steambase.io/apps/287450)  | :heavy_check_mark: | :x:                         |
-| Sacred 2 Gold                                       | [SteamDB](https://steamdb.info/app/225640)   | [ProtonDB](https://protondb.com/app/225640)  | [Steambase](https://steambase.io/apps/225640)  | :x:                | :heavy_check_mark:         |
-| Scrap Mechanic                                      | [SteamDB](https://steamdb.info/app/387990)   | [ProtonDB](https://protondb.com/app/387990)  | [Steambase](https://steambase.io/apps/387990)  | :x:                | :heavy_check_mark:         |
-| Serious Sam 4                                       | [SteamDB](https://steamdb.info/app/257420)   | [ProtonDB](https://protondb.com/app/257420)  | [Steambase](https://steambase.io/apps/257420)  | :x:                | :heavy_check_mark:         |
-| Serious Sam: The Random Encounter                   | [SteamDB](https://steamdb.info/app/201480)   | [ProtonDB](https://protondb.com/app/201480)  | [Steambase](https://steambase.io/apps/201480)  | :x:                | :heavy_check_mark:         |
-| Seven: Enhanced Edition                             | [SteamDB](https://steamdb.info/app/471010)   | [ProtonDB](https://protondb.com/app/471010)  | [Steambase](https://steambase.io/apps/471010)  | :x:                | :heavy_check_mark:         |
-| Sleeping Dogs: Definitive Edition                   | [SteamDB](https://steamdb.info/app/307690)   | [ProtonDB](https://protondb.com/app/307690)  | [Steambase](https://steambase.io/apps/307690)  | :x:                | :heavy_check_mark:         |
-| Sonic CD                                            | [SteamDB](https://steamdb.info/app/200940)   | [ProtonDB](https://protondb.com/app/200940)  | [Steambase](https://steambase.io/apps/200940)  | :x:                | :heavy_check_mark:         |
-| SOULCALIBUR VI                                      | [SteamDB](https://steamdb.info/app/544750)   | [ProtonDB](https://protondb.com/app/544750)  | [Steambase](https://steambase.io/apps/544750)  | :heavy_check_mark: | :heavy_check_mark:         |
-| Space Engineers                                     | [SteamDB](https://steamdb.info/app/244850)   | [ProtonDB](https://protondb.com/app/244850)  | [Steambase](https://steambase.io/apps/244850)  | :x:                | :heavy_check_mark:         |
-| Spyro Reignited Trilogy                             | [SteamDB](https://steamdb.info/app/996580)   | [ProtonDB](https://protondb.com/app/996580)  | [Steambase](https://steambase.io/apps/996580)  | :x:                | :heavy_check_mark:         |
-| STAR WARS Galactic Battlegrounds Saga               | [SteamDB](https://steamdb.info/app/356500)   | [ProtonDB](https://protondb.com/app/356500)  | [Steambase](https://steambase.io/apps/356500)  | :heavy_check_mark: | :x:                        |
-| Stealth Inc 2: A Game of Clones                     | [SteamDB](https://steamdb.info/app/329380)   | [ProtonDB](https://protondb.com/app/329380)  | [Steambase](https://steambase.io/apps/329380)  | :x:                | :heavy_check_mark:         |
-| Strange Brigade                                     | [SteamDB](https://steamdb.info/app/312670)   | [ProtonDB](https://protondb.com/app/312670)  | [Steambase](https://steambase.io/apps/312670)  | :x:                | :heavy_check_mark:         |
-| Super Lucky's Tale                                  | [SteamDB](https://steamdb.info/app/847360)   | [ProtonDB](https://protondb.com/app/847360)  | [Steambase](https://steambase.io/apps/847360)  | :x:                | :heavy_check_mark:         |
-| Super Meat Boy                                      | [SteamDB](https://steamdb.info/app/40800)    | [ProtonDB](https://protondb.com/app/40800)   | [Steambase](https://steambase.io/apps/40800)   | :x:                | :heavy_check_mark:         |
-| Syberia                                             | [SteamDB](https://steamdb.info/app/46500)    | [ProtonDB](https://protondb.com/app/46500)   | [Steambase](https://steambase.io/apps/46500)   | :x:                | :heavy_check_mark:         |
-| Tesla Effect: A Tex Murphy Adventure                | [SteamDB](https://steamdb.info/app/261510)   | [ProtonDB](https://protondb.com/app/261510)  | [Steambase](https://steambase.io/apps/261510)  | :x:                | :heavy_check_mark:         |
-| The Bureau: XCOM Declassified                       | [SteamDB](https://steamdb.info/app/65930)    | [ProtonDB](https://protondb.com/app/65930)   | [Steambase](https://steambase.io/apps/65930)   | :x:                | :heavy_check_mark:         |
-| The Elder Scrolls Online                            | [SteamDB](https://steamdb.info/app/306130)   | [ProtonDB](https://protondb.com/app/306130)  | [Steambase](https://steambase.io/apps/306130)  | :x:                | :heavy_check_mark:         |
-| The Elder Scrolls V: Skyrim                         | [SteamDB](https://steamdb.info/app/72850)    | [ProtonDB](https://protondb.com/app/72850)   | [Steambase](https://steambase.io/apps/72850)   | :x:                | :heavy_check_mark:         |
-| The Elder Scrolls V: Skyrim Special Edition         | [SteamDB](https://steamdb.info/app/489830)   | [ProtonDB](https://protondb.com/app/489830)  | [Steambase](https://steambase.io/apps/489830)  | :x:                | :heavy_check_mark:         |
-| The Evil Within                                     | [SteamDB](https://steamdb.info/app/268050)   | [ProtonDB](https://protondb.com/app/268050)  | [Steambase](https://steambase.io/apps/268050)  | :x:                | :heavy_check_mark:         |
-| The Lord of the Rings Online                        | [SteamDB](https://steamdb.info/app/212500)   | [ProtonDB](https://protondb.com/app/212500)  | [Steambase](https://steambase.io/apps/212500)  | :x:                | :heavy_check_mark:         |
-| Tokyo Xanadu eX+                                    | [SteamDB](https://steamdb.info/app/587260)   | [ProtonDB](https://protondb.com/app/587260)  | [Steambase](https://steambase.io/apps/587260)  | :x:                | :heavy_check_mark:         |
-| Total War: WARHAMMER III                            | [SteamDB](https://steamdb.info/app/1142710)  | [ProtonDB](https://protondb.com/app/1142710) | [Steambase](https://steambase.io/apps/1142710) | :x:                | :x:                        |
-| Tomb Raider                                         | [SteamDB](https://steamdb.info/app/203160)   | [ProtonDB](https://protondb.com/app/203160)  | [Steambase](https://steambase.io/apps/203160)  | :x:                | :heavy_check_mark:         |
-| Tomb Raider I                                       | [SteamDB](https://steamdb.info/app/224960)   | [ProtonDB](https://protondb.com/app/224960)  | [Steambase](https://steambase.io/apps/224960)  | :x:                | :heavy_check_mark:         |
-| Tree of Savior                                      | [SteamDB](https://steamdb.info/app/372000)   | [ProtonDB](https://protondb.com/app/372000)  | [Steambase](https://steambase.io/apps/372000)  | :x:                | :heavy_check_mark:         |
-| Ultimate Marvel VS. Capcom 3                        | [SteamDB](https://steamdb.info/app/357190)   | [ProtonDB](https://protondb.com/app/357190)  | [Steambase](https://steambase.io/apps/357190)  | :x:                | :heavy_check_mark:         |
-| Warframe                                            | [SteamDB](https://steamdb.info/app/230410)   | [ProtonDB](https://protondb.com/app/230410)  | [Steambase](https://steambase.io/apps/230410)  | :x:                | :heavy_check_mark:         |
-| Warhammer 40,000: Rogue Trader                      | [SteamDB](https://steamdb.info/app/2186680)  | [ProtonDB](https://protondb.com/app/2186680) | [Steambase](https://steambase.io/apps/2186680) | :x:                | :x:                        |
-| Warhammer 40,000: Space Marine 2                    | [SteamDB](https://steamdb.info/app/2183900)  | [ProtonDB](https://protondb.com/app/2183900) | [Steambase](https://steambase.io/apps/2183900) | :x:                | :x:                        |
-| Wasteland 3                                         | [SteamDB](https://steamdb.info/app/719040)   | [ProtonDB](https://protondb.com/app/719040)  | [Steambase](https://steambase.io/apps/719040)  | :x:                | :heavy_check_mark:         |
-| Watch_Dogs                                          | [SteamDB](https://steamdb.info/app/243470)   | [ProtonDB](https://protondb.com/app/243470)  | [Steambase](https://steambase.io/apps/243470)  | :x:                | :heavy_check_mark:         |
-| Watch_Dogs 2                                        | [SteamDB](https://steamdb.info/app/447040)   | [ProtonDB](https://protondb.com/app/447040)  | [Steambase](https://steambase.io/apps/447040)  | :x:                | :heavy_check_mark:         |
-| WORLD OF HORROR                                     | [SteamDB](https://steamdb.info/app/913740)   | [ProtonDB](https://protondb.com/app/913740)  | [Steambase](https://steambase.io/apps/913740)  | :x:                | :heavy_check_mark:         |
-| Yakuza 0                                            | [SteamDB](https://steamdb.info/app/638970)   | [ProtonDB](https://protondb.com/app/638970)  | [Steambase](https://steambase.io/apps/638970)  | :x:                | :heavy_check_mark:         |
-| Yakuza Kiwami                                       | [SteamDB](https://steamdb.info/app/834530)   | [ProtonDB](https://protondb.com/app/834530)  | [Steambase](https://steambase.io/apps/834530)  | :x:                | :heavy_check_mark:         |
-| Yesterday Origins                                   | [SteamDB](https://steamdb.info/app/465280)   | [ProtonDB](https://protondb.com/app/465280)  | [Steambase](https://steambase.io/apps/465280)  | :x:                | :heavy_check_mark:         |
-| You Need A Budget 4 (YNAB)                          | [SteamDB](https://steamdb.info/app/227320)   | [ProtonDB](https://protondb.com/app/227320)  | [Steambase](https://steambase.io/apps/227320)  | :x:                | :heavy_check_mark:         |
+Proton and its components are distributed under their own licenses; see [LICENSE](LICENSE),
+[LICENSE.proton](LICENSE.proton) and `dist.LICENSE` (shipped in the tarball). Wine is LGPL-2.1-or-later.
+Banner-Proton's own scripts and patches use the same licenses as the files they change.

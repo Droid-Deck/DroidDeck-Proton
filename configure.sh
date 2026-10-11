@@ -170,6 +170,9 @@ function configure() {
     echo "BUILD_NAME := $(escape_for_make "$build_name")"
     echo "TARGET_ARCH := $(escape_for_make "$target_arch")"
     echo "INTERNAL_TOOL_NAME := $(escape_for_make "$internal_tool_name")"
+    if [[ -n $arg_display_name ]]; then
+      echo "DISPLAY_NAME := $arg_display_name"
+    fi
 
     # SteamRT was specified, baking it into the Makefile
     if [[ -n $arg_protonsdk_image ]]; then
@@ -201,6 +204,7 @@ function configure() {
 
 arg_protonsdk_image=""
 arg_build_name=""
+arg_display_name=""
 arg_target_arch=""
 arg_container_engine=""
 arg_docker_opts=""
@@ -240,6 +244,9 @@ function parse_args() {
       arg_help=1
     elif [[ $arg = --build-name ]]; then
       arg_build_name="$val"
+      val_used=1
+    elif [[ $arg = --display-name ]]; then
+      arg_display_name="$val"
       val_used=1
     elif [[ $arg = --target-arch ]]; then
       arg_target_arch="$val"

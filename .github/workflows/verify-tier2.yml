@@ -1,0 +1,26 @@
+name: Verify wine tier 2 (GE patch set)
+
+# Re-runs GE-Proton's own wine patching section on Valve's bleeding-edge wine (tier 1 tag) and checks
+# that the result is exactly the tier 2 tag of the Banner-Proton wine branch. No compilation.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - patches/**
+      - wine
+      - wine-staging
+      - banner-proton/**
+      - .github/workflows/verify-tier2.yml
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submodules (wine, wine-staging)
+        run: |
+          git submodule update --init --filter=tree:0 wine wine-staging
+      - name: Re-derive tier 2 and compare
+        run: banner-proton/verify-tier2.sh

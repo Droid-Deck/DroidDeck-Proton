@@ -1,0 +1,345 @@
+name: _stage
+
+# One build stage of Banner-Proton (aarch64). The full Proton build can exceed a runner's 6 hour limit,
+# so each stage runs "make dist" against a deadline. A stage that runs out of time packs its build tree
+# (and ccache) into an artifact, and the next stage restores it and carries on where make stopped.
+# Source mtimes are pinned to a constant so make and Proton's rsync source sync see a restored tree
+# as up to date.
+
+on:
+  workflow_call:
+    inputs:
+      stage:
+        required: true
+        type: number
+      prev_stage:
+        required: false
+        type: number
+        default: 0
+      build_name:
+        required: true
+        type: string
+      display_name:
+        required: true
+        type: string
+    outputs:
+      done:
+        description: "true when make dist finished and the tarball was produced in this stage"
+        value: ${{ jobs.build.outputs.done }}
+
+env:
+  CCACHE_DIR: /home/runner/.ccache
+  CCACHE_MAXSIZE: 3G
+  CCACHE_COMPRESS: "1"
+  STAGE_MINUTES: 330
+
+jobs:
+  build:
+    name: Stage ${{ inputs.stage }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 355
+    outputs:
+      done: ${{ steps.make.outputs.done }}
+    steps:
+      - name: Start clock
+        run: echo "STAGE_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Free disk space
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium \
+            /usr/local/lib/node_modules /usr/share/miniconda || true
+          docker image prune -af >/dev/null 2>&1 || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ccache zstd rsync llvm binutils >/dev/null
+          df -h /
+          nproc; free -g
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Submodules
+        run: git submodule update --init --filter=tree:0 --recursive --jobs 8
+
+      - name: Read pins
+        run: |
+          . banner-proton/PINS
+          echo "STEAMRT_IMAGE=$STEAMRT_IMAGE" >> "$GITHUB_ENV"
+          echo "SDK_CACHE_KEY=sdk-$(echo "$STEAMRT_IMAGE" | tr '/:' '__')" >> "$GITHUB_ENV"
+          # Constant source mtime (2010-01-01). Restored build trees and prebuilt component caches
+          # are only ever matched with identical sources (same run, or a content-keyed cache).
+          echo "EPOCH=1262304000" >> "$GITHUB_ENV"
+          test "$(git -C wine rev-parse HEAD)" = "$(git ls-tree HEAD wine | awk '{print $3}')"
+          git -C wine log -1 --format='wine: %H %s'
+
+      - name: Prepare sources (GE protonprep without its wine section)
+        run: |
+          banner-proton/prep.sh
+          # GE's CI strips binaries at compile time; keep doing the same.
+          patch -Np1 -i ./.github/patches/0001-build-strip-binaries-early.patch
+
+      - name: Pin source mtimes
+        run: |
+          find . -path ./build -prune -o -name .git -prune -o -print0 | xargs -0 -r touch -h -d "@$EPOCH"
+
+      - name: Restore SDK image cache
+        id: sdk
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/sdk-image.tar.zst
+          key: ${{ env.SDK_CACHE_KEY }}
+
+      - name: Load SDK image
+        run: |
+          if [ -f /home/runner/sdk-image.tar.zst ]; then
+            zstd -dc /home/runner/sdk-image.tar.zst | docker load
+          else
+            docker pull "$STEAMRT_IMAGE"
+            docker save "$STEAMRT_IMAGE" | zstd -T0 -3 -o /home/runner/sdk-image.tar.zst
+          fi
+          docker image ls
+
+      - name: Save SDK image cache
+        if: steps.sdk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/sdk-image.tar.zst
+          key: ${{ env.SDK_CACHE_KEY }}
+
+      - name: Drop the SDK image archive
+        run: rm -f /home/runner/sdk-image.tar.zst
+
+      - name: Restore previous stage
+        if: inputs.stage > 1
+        uses: actions/download-artifact@v4
+        with:
+          name: state-stage${{ inputs.prev_stage }}
+          path: /home/runner/state
+
+      - name: Unpack previous stage
+        if: inputs.stage > 1
+        run: |
+          tar -C / -I zstd -xf /home/runner/state/state.tar.zst
+          rm -rf /home/runner/state
+          du -sh build "$CCACHE_DIR" || true
+
+      - name: Restore ccache
+        if: inputs.stage == 1
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-aarch64-${{ github.run_id }}
+          restore-keys: ccache-aarch64-
+
+      - name: Component cache keys
+        id: ckeys
+        run: |
+          key() {
+            # Submodule commits and patch blobs of the group, plus the build rules and SDK image.
+            { git ls-files -s -- "$@"; git ls-files -s -- Makefile.in make .github/patches banner-proton/prep.sh; echo "$STEAMRT_IMAGE"; } | sha256sum | cut -c1-24
+          }
+          echo "graphics=prebuilt-graphics-$(key glslang dxvk d7vk vkd3d-proton dxvk-nvapi dxvk-igdext patches/dxvk patches/vkd3d-proton)" >> "$GITHUB_OUTPUT"
+          echo "fex=prebuilt-fex-$(key FEX FEX_Config.json)" >> "$GITHUB_OUTPUT"
+          echo "media=prebuilt-media-$(key ffmpeg bzip2 dav1d xz)" >> "$GITHUB_OUTPUT"
+          echo "speech=prebuilt-speech-$(key openfst kaldi vosk-api piper)" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - name: Restore prebuilt graphics (dxvk, d7vk, vkd3d-proton, dxvk-nvapi, dxvk-igdext, glslang)
+        if: inputs.stage == 1
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/prebuilt/graphics.tar.zst
+          key: ${{ steps.ckeys.outputs.graphics }}
+
+      - name: Restore prebuilt FEX
+        if: inputs.stage == 1
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/prebuilt/fex.tar.zst
+          key: ${{ steps.ckeys.outputs.fex }}
+
+      - name: Restore prebuilt media (ffmpeg, dav1d, bzip2, xz)
+        if: inputs.stage == 1
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/prebuilt/media.tar.zst
+          key: ${{ steps.ckeys.outputs.media }}
+
+      - name: Restore prebuilt speech (openfst, kaldi, vosk, piper)
+        if: inputs.stage == 1
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/prebuilt/speech.tar.zst
+          key: ${{ steps.ckeys.outputs.speech }}
+
+      - name: Unpack prebuilt components
+        if: inputs.stage == 1
+        run: |
+          mkdir -p build
+          for f in /home/runner/prebuilt/*.tar.zst; do
+            [ -f "$f" ] || continue
+            echo "restoring $f"; tar -C build -I zstd -xf "$f"
+          done
+          rm -rf /home/runner/prebuilt
+
+      - name: Configure
+        run: |
+          IMG_PATH=$(docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$STEAMRT_IMAGE" | sed -n 's/^PATH=//p')
+          echo "image PATH: $IMG_PATH"
+          # ccache for the llvm-mingw cross compilers; the SDK image only wraps the native ones.
+          WRAP=/home/runner/ccache-wrap
+          mkdir -p "$WRAP"
+          for c in $(docker run --rm "$STEAMRT_IMAGE" ls /opt/llvm-mingw/bin | grep -E -- '-w64-mingw32-(gcc|g\+\+|clang|clang\+\+|cc|c\+\+)$'); do
+            ln -sf /usr/bin/ccache "$WRAP/$c"
+          done
+          ls "$WRAP" | tr '\n' ' '; echo
+          mkdir -p build "$CCACHE_DIR"
+          cd build
+          ../configure.sh --build-name="${{ inputs.build_name }}" --display-name="${{ inputs.display_name }}" \
+            --target-arch=arm64 --container-engine=docker --proton-sdk-image="$STEAMRT_IMAGE" \
+            --docker-opts="-v $WRAP:$WRAP -e PATH=$WRAP:$IMG_PATH"
+          touch -h -d "@$EPOCH" Makefile
+          cat Makefile
+
+      - name: Build (make dist) until the stage deadline
+        id: make
+        working-directory: build
+        run: |
+          ccache -z >/dev/null || true
+          now=$(date +%s)
+          budget=$(( STAGE_MINUTES*60 - (now - STAGE_START) - 30*60 ))
+          echo "make budget: $((budget/60)) minutes"
+          set +e
+          timeout -s TERM "$budget" make -j"$(nproc)" dist > >(tee make.log | grep -E '^(:: |make.*Error|.*error:)' ) 2>&1
+          rc=$?
+          set -e
+          echo "make exit code: $rc"
+          if [ "$rc" = 124 ]; then
+            echo "Stage deadline reached; stopping the build container."
+            docker ps -q | xargs -r docker kill -s TERM || true
+            sleep 60
+            docker ps -q | xargs -r docker kill || true
+            echo "done=false" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" = 0 ]; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+          else
+            tail -n 200 make.log
+            exit "$rc"
+          fi
+          ccache -s || true
+
+      - name: Upload make log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: make-log-stage${{ inputs.stage }}
+          path: build/make.log
+          retention-days: 7
+
+      - name: Pack build state for the next stage
+        if: steps.make.outputs.done == 'false'
+        run: |
+          df -h /
+          tar -C / -I 'zstd -T0 -3' -cf /home/runner/state.tar.zst "${GITHUB_WORKSPACE#/}/build" home/runner/.ccache
+          ls -lh /home/runner/state.tar.zst
+
+      - name: Upload build state
+        if: steps.make.outputs.done == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: state-stage${{ inputs.stage }}
+          path: /home/runner/state.tar.zst
+          compression-level: 0
+          retention-days: 2
+
+      - name: Strip and package
+        if: steps.make.outputs.done == 'true'
+        working-directory: build
+        run: |
+          NAME="${{ inputs.build_name }}"
+          du -sh dist
+          python3 ../banner-proton/strip-dist.py dist/files strip "$(command -v llvm-strip || ls /usr/bin/llvm-strip-* | sort -V | tail -1)"
+          du -sh dist
+          find dist -name '*.debug' -print -delete
+          rm -rf "$NAME"
+          rsync -a --delete dist/ "$NAME/"
+          tar --owner=0 --group=0 --numeric-owner -czf "$NAME.tar.gz" "$NAME"
+          sha512sum "$NAME.tar.gz" > "$NAME.sha512sum"
+          ls -l "$NAME.tar.gz"; cat "$NAME.sha512sum"
+          cat "$NAME/compatibilitytool.vdf" "$NAME/toolmanifest.vdf" "$NAME/version"
+
+      - name: Upload tarball
+        if: steps.make.outputs.done == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.build_name }}
+          path: |
+            build/${{ inputs.build_name }}.tar.gz
+            build/${{ inputs.build_name }}.sha512sum
+          compression-level: 0
+          retention-days: 14
+
+      - name: Save ccache
+        if: steps.make.outputs.done == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-aarch64-${{ github.run_id }}
+
+      - name: Pack prebuilt components
+        if: steps.make.outputs.done == 'true'
+        working-directory: build
+        run: |
+          mkdir -p /home/runner/prebuilt
+          pack() {
+            local group=$1; shift
+            local list=()
+            for p in "$@"; do
+              for f in ".$p-source" ".$p-post-source" .$p-*-configure .$p-*-build .$p-*-post-build src-$p dst-$p-*; do
+                [ -e "$f" ] && list+=("$f")
+              done
+            done
+            [ ${#list[@]} -gt 0 ] || return 0
+            tar -I 'zstd -T0 -3' -cf "/home/runner/prebuilt/$group.tar.zst" "${list[@]}"
+            ls -lh "/home/runner/prebuilt/$group.tar.zst"
+          }
+          pack graphics glslang dxvk d7vk vkd3d-proton dxvk-nvapi dxvk-igdext
+          pack fex fex fex_unixlib
+          pack media ffmpeg bzip2 dav1d xz
+          pack speech openfst kaldi vosk piper
+
+      - name: Save prebuilt graphics
+        if: steps.make.outputs.done == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/prebuilt/graphics.tar.zst
+          key: ${{ steps.ckeys.outputs.graphics }}
+        continue-on-error: true
+
+      - name: Save prebuilt FEX
+        if: steps.make.outputs.done == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/prebuilt/fex.tar.zst
+          key: ${{ steps.ckeys.outputs.fex }}
+        continue-on-error: true
+
+      - name: Save prebuilt media
+        if: steps.make.outputs.done == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/prebuilt/media.tar.zst
+          key: ${{ steps.ckeys.outputs.media }}
+        continue-on-error: true
+
+      - name: Save prebuilt speech
+        if: steps.make.outputs.done == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/prebuilt/speech.tar.zst
+          key: ${{ steps.ckeys.outputs.speech }}
+        continue-on-error: true

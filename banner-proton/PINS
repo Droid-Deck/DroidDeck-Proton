@@ -1,0 +1,12 @@
+# Upstream pins for this Banner-Proton version. Shell-sourceable.
+GE_PROTON_COMMIT=49c50f4b2546b06cea3493803f18a13bb2a2f0c8
+GE_PROTON_RELEASE=GE-Proton11-7
+VALVE_WINE_BRANCH=bleeding-edge
+VALVE_WINE_COMMIT=981e2f0b9007fd70a6e0ed6119cb18f4164e26f9
+CACHYOS_RELEASE=cachyos-11.0-20261005-slr
+CACHYOS_WINE_BRANCH=cachyos_11.0_20261001/main
+CACHYOS_WINE_COMMIT=2ce6b44caa66a56ec99c7826ae564c088abc1b9f
+WINE_REPO=https://github.com/The412Banner/proton-wine
+WINE_BRANCH=banner-proton/11.7
+WINE_TIER_TAGS="bp-11.7-tier1 bp-11.7-tier2 bp-11.7-tier3 bp-11.7-tier4"
+STEAMRT_IMAGE=registry.gitlab.steamos.cloud/proton/steamrt4/sdk/arm64-llvm:4.0.20260714.251823-0

@@ -1718,7 +1718,7 @@ COMPAT_MANIFEST_TEMPLATE := $(SRCDIR)/compatibilitytool.vdf.template
 DIST_COMPAT_MANIFEST := $(DST_BASE)/compatibilitytool.vdf
 INTERNAL_TOOL_NAME ?= $(BUILD_NAME)-proton
 $(DIST_COMPAT_MANIFEST): $(COMPAT_MANIFEST_TEMPLATE) | $(DST_DIR)
-	sed -r -e 's|##BUILD_NAME##|$(BUILD_NAME)|' -e 's|##INTERNAL_TOOL_NAME##|$(INTERNAL_TOOL_NAME)|' $< > $@
+	sed -r -e 's|##BUILD_NAME##|$(or $(DISPLAY_NAME),$(BUILD_NAME))|' -e 's|##INTERNAL_TOOL_NAME##|$(INTERNAL_TOOL_NAME)|' $< > $@
 
 all-dist: $(DIST_COMPAT_MANIFEST)
 
