@@ -1,7 +1,7 @@
 name: Verify wine tier 2 (GE patch set)
 
 # Re-runs GE-Proton's own wine patching section on Valve's bleeding-edge wine (tier 1 tag) and checks
-# that the result is exactly the tier 2 tag of the Banner-Proton wine branch. No compilation.
+# that the result is exactly the tier 2 tag of the DroidDeck-Proton wine branch. No compilation.
 
 on:
   workflow_dispatch:

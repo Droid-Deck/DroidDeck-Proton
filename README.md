@@ -12,12 +12,12 @@ extract the release tarball into `compatibilitytools.d` and pick **DroidDeck-Pro
 > it is not affiliated with GloriousEggroll, CachyOS or Valve. Please do not report DroidDeck-Proton
 > problems to those projects; open an issue here instead.
 
-Status: **prerelease / proof of concept.** Builds come from GitHub Actions; device testing is still to come.
+Status: early releases. Builds come from GitHub Actions; DOOMBLADE (Epic, D3D11) is the game tested on a device so far.
 
 ## How it is put together
 
 DroidDeck-Proton is a fork of [proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)
-(its history is kept on the `ge-master` branch). Wine is built in five tiers, and every tier is a
+(its history is kept on the `ge-master` branch). Wine is built in six tiers, and every tier is a
 tag on the wine branch so it can be bisected or turned off on its own:
 
 | Tier | What | Where | Tag |
@@ -27,6 +27,7 @@ tag on the wine branch so it can be bisected or turned off on its own:
 | 3 | CachyOS game fixes that GE does not already carry | `CachyOS/wine-cachyos` | `bp-11.7-tier3` |
 | 4 | Our portable Wine fixes from the Bannerlator layers | `The412Banner/proton-wine` `proton_11.7.1-GE` | `bp-11.7-tier4` |
 | 5 | DroidDeck's esync (eventfd and shared memory sync in wineserver and ntdll) | `Droid-Deck/DroidDeck-Components` `droiddeck-esync` | `bp-11.7-tier5` |
+| 6 | Arihany's SD card fixes: PE images in anonymous memory (noexec mounts) and the drive-root copy fix | `The412Banner/proton-wine` `proton_11.0` | `bp-11.7-tier6` |
 
 The wine source is [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine) branch
 `banner-proton/11.7`; this repository's `wine` submodule points at it. Everything outside wine
@@ -36,14 +37,14 @@ media stack ...) is GE-Proton's, prepared by GE's own `patches/protonprep-valve-
 The `Verify wine tier 2` workflow re-runs GE's wine section on tier 1 and checks the result is
 exactly tier 2.
 
-### Pins (version 11-7.2)
+### Pins (version 11-7.3)
 
 | | Commit |
 |---|---|
 | GE-Proton (`proton-ge-custom` master, includes everything in GE-Proton11-7 and the work after it) | `49c50f4b2546b06cea3493803f18a13bb2a2f0c8` |
 | Valve wine `bleeding-edge` (same commit GE master pins) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
 | CachyOS wine, `cachyos_11.0_20261001/main` (wine of proton-cachyos `cachyos-11.0-20261005-slr`) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| DroidDeck-Proton wine, `banner-proton/11.7` | `96e8477b8bc178c0585b427968c3910d7649636a` |
+| DroidDeck-Proton wine, `banner-proton/11.7` | `2786ea82481dbc169ce00e76a1bd56b81d7b58a1` |
 
 The machine-readable list is `banner-proton/PINS`; the version is `banner-proton/VERSION`.
 
@@ -136,6 +137,29 @@ esync (`WINEESYNC` nonzero), then server-side sync, and reports `droiddeck-esync
 it runs esync. The patch changes no wineserver request and no ntdll.so export; CI checks both (the
 protocol headers against tier 4, and the exports against the release given as `compare_with`).
 
+### Tier 6: SD card fixes (Arihany)
+
+From our Wine 11 port in [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine)
+`proton_11.0` (`497c384f`, `android/patches/`), applied with line offsets only. One trace line was added
+to each fix so CI can check for it in the binaries.
+
+- **ntdll: PE images in anonymous memory** (`dlls/ntdll/unix/virtual.c`). Originally GameNative's
+  (`proton_10.0_mprotect`), carried in Arihany's Proton 11 builds. `map_file_into_view`, `map_pe_header`
+  and `map_image_into_view` take a `force_anon` flag; `virtual_map_image` sets it, so a private image
+  mapping is read with `pread` into anonymous memory instead of being `mmap`ed from the file. Games on a
+  `noexec` mount (an SD card on Android: exFAT behind fuse) then start instead of failing with
+  "failed to set ... protection ... noexec filesystem?". Shared sections and `NtMapViewOfSection` still
+  map the file.
+- **shell32: copying to or from a drive root** (`dlls/shell32/shlfileop.c`, Arihany). `file_entry_init`
+  keeps the backslash of a bare root (`D:\`) and never leaves the directory or file name unset, so an
+  `SHFileOperation` copy between two drive roots no longer crashes.
+
+Not taken: Arihany's `LC_ALL=C.UTF-8` default, which is for Android's bionic libc (DroidDeck runs glibc).
+
+CI guards (a build without the fixes fails): the `Wine protocol unchanged` job checks the fix code in
+the wine source, and `Verify tarball` looks for each fix's trace string in `ntdll.so` and in every
+`shell32.dll`.
+
 ## Building
 
 All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) inside Valve's
@@ -150,15 +174,19 @@ All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) i
   `make dist`. Then everything is stripped
   (`strip --strip-unneeded` for ELF, `llvm-strip --strip-unneeded` for PE, no debug files) and packed as
   `DroidDeck-Proton-<version>-aarch64.tar.gz` plus `.sha512sum`, with the same layout as GE's tarball
-  (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). With "publish" (on main) it
-  becomes a prerelease; "compare_with" compares the tarball with an earlier release.
+  (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). The tarball's top folder is
+  `DroidDeck-Proton <version>` (DroidDeck shows a tool by its folder name), the tool's internal name
+  is `DroidDeck-Proton-<version>` and the `version` file reads `<timestamp> DroidDeck-Proton-<version>`.
+  CI fails if any of these, or the asset names and FFmpeg's version string, still say Banner-Proton.
+  With "publish" (on main) it becomes the latest release; "compare_with" compares the tarball with an
+  earlier release.
 - Caches: each group's output, keyed by its sources (a group with a cached output is skipped), one
   ccache per group for the native and the llvm-mingw cross compilers, and the SDK image. Older
   entries of a group are deleted when a new one is saved.
 
 Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.GE-Proton.md), with
 `banner-proton/prep.sh` instead of `patches/protonprep-valve-staging.sh` and
-`../configure.sh --target-arch=arm64 --build-name=DroidDeck-Proton-<version>-aarch64 --display-name="DroidDeck-Proton <version>"`.
+`../configure.sh --target-arch=arm64 --build-name=DroidDeck-Proton-<version> --display-name="DroidDeck-Proton <version>"`.
 
 ## Credits
 
@@ -169,6 +197,7 @@ Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.
 - NelloKudo (Nello De Gregoris) for the media and game fixes, Etaash Mathamsetty for the EM work,
   and every patch author named above and in the commit history.
 - Elizabeth Figura for esync, fsync and ntsync, and maxjivi05 / DroidDeck for droiddeck-esync.
+- Arihany for the SD card and drive-root copy fixes, and GameNative for the original anonymous image mapping change.
 - FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and the other projects bundled by GE-Proton.
 
 ## License

@@ -1,6 +1,6 @@
 name: _group
 
-# One job of the parallel Banner-Proton (aarch64) build. See banner-proton/ci.sh.
+# One job of the parallel DroidDeck-Proton (aarch64) build. See banner-proton/ci.sh.
 #
 # A group restores the outputs of the groups it depends on from the Actions cache, runs the container
 # make for its goals and saves its own output to the cache under its content key. The "assemble" group
@@ -249,7 +249,9 @@ jobs:
           done
           mkdir -p build "$CCACHE_DIR"
           cd build
-          ../configure.sh --build-name="${{ inputs.build_name }}" --display-name="${{ inputs.display_name }}" \
+          # build_name is the asset stem (<tool>-aarch64); the tool's internal name drops the arch.
+          name="${{ inputs.build_name }}"
+          ../configure.sh --build-name="${name%-aarch64}" --display-name="${{ inputs.display_name }}" \
             --target-arch=arm64 --container-engine=docker --proton-sdk-image="$STEAMRT_IMAGE" \
             --docker-opts "-v $WRAP:$WRAP -e PATH=$WRAP:$IMG_PATH"
           touch -h -d "@$EPOCH" Makefile
@@ -388,16 +390,18 @@ jobs:
         working-directory: build
         run: |
           NAME="${{ inputs.build_name }}"
+          # The top folder is the display name: DroidDeck shows a tool as "<folder> (Compatible)".
+          DIR="${{ inputs.display_name }}"
           du -sh dist
           python3 ../banner-proton/strip-dist.py dist/files strip "$(command -v llvm-strip || ls /usr/bin/llvm-strip-* | sort -V | tail -1)"
           du -sh dist
           find dist -name '*.debug' -print -delete
-          rm -rf "$NAME"
-          rsync -a --delete dist/ "$NAME/"
-          tar --owner=0 --group=0 --numeric-owner -czf "$NAME.tar.gz" "$NAME"
+          rm -rf "$DIR"
+          rsync -a --delete dist/ "$DIR/"
+          tar --owner=0 --group=0 --numeric-owner -czf "$NAME.tar.gz" "$DIR"
           sha512sum "$NAME.tar.gz" > "$NAME.sha512sum"
           ls -l "$NAME.tar.gz"; cat "$NAME.sha512sum"
-          cat "$NAME/compatibilitytool.vdf" "$NAME/toolmanifest.vdf" "$NAME/version"
+          cat "$DIR/compatibilitytool.vdf" "$DIR/toolmanifest.vdf" "$DIR/version"
 
       - name: Upload tarball
         if: steps.make.outputs.done == 'true' && inputs.group == 'assemble'

@@ -1,4 +1,4 @@
-name: Build Banner-Proton (aarch64)
+name: Build DroidDeck-Proton (aarch64)
 
 # Parallel build (see banner-proton/ci.sh and _group.yml):
 #
@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish the tarball as a GitHub prerelease (main only)"
+        description: "Publish the tarball as the latest GitHub release (main only)"
         type: boolean
         default: true
       compare_with:
@@ -51,9 +51,9 @@ jobs:
         run: |
           v=$(tr -d '[:space:]' < banner-proton/VERSION)
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "build_name=Banner-Proton-$v-aarch64" >> "$GITHUB_OUTPUT"
-          echo "display_name=Banner-Proton $v" >> "$GITHUB_OUTPUT"
-          echo "Building Banner-Proton $v from $GITHUB_SHA"
+          echo "build_name=DroidDeck-Proton-$v-aarch64" >> "$GITHUB_OUTPUT"
+          echo "display_name=DroidDeck-Proton $v" >> "$GITHUB_OUTPUT"
+          echo "Building DroidDeck-Proton $v from $GITHUB_SHA"
       - id: k
         run: |
           keys=$(banner-proton/ci.sh keys)
@@ -214,6 +214,27 @@ jobs:
           tools/make_requests
           git diff --stat --exit-code -- $files
           echo "protocol unchanged since $WINE_PROTOCOL_BASE"
+      - name: Tier 6 fixes in the wine source
+        run: |
+          # The tier 6 fixes have no getenv string of their own; check the code itself so a rebase
+          # that drops a hunk fails here rather than shipping a build without it.
+          cd wine
+          fail=0
+          has() { local n; n=$(grep -cF -- "$2" "$1" || true); if [ "$n" -ge "${3:-1}" ]; then echo "ok: $1 has \"$2\" ($n)"; else echo "MISSING in $1: \"$2\" (found $n, want ${3:-1})"; fail=1; fi; }
+          v=dlls/ntdll/unix/virtual.c
+          # map_file_into_view, map_pe_header and map_image_into_view take force_anon...
+          has $v "BOOL force_anon )" 2
+          has $v "BOOL removable, BOOL force_anon )"
+          # ...private file mappings and the PE header are read into anonymous memory...
+          has $v "if (force_anon && (flags & MAP_PRIVATE))"
+          has $v "if (force_anon) *removable = TRUE;"
+          # ...and virtual_map_image asks for it.
+          has $v "needs_close, TRUE );"
+          s=dlls/shell32/shlfileop.c
+          has $s "size_t dir_len = ptr - file_name + 1;"
+          has $s "if (ptr == file_name || (ptr == file_name + 2 && file_name[1] == ':'))"
+          has $s "lstrcpynW(file_entry->szDirectory, file_name, dir_len);"
+          exit $fail
 
   verify:
     name: Verify tarball
@@ -232,32 +253,53 @@ jobs:
           . banner-proton/PINS
           mkdir x
           tar -C x -xzf new/$NAME.tar.gz --wildcards '*/version' '*/aarch64-unix/ntdll.so' '*/aarch64-unix/win32u.so' \
-            '*/bin-arm64/wineserver' '*sharedgpures.sys'
-          T=x/$NAME
+            '*/bin-arm64/wineserver' '*sharedgpures.sys' '*-windows/shell32.dll'
+          # The tarball's one top folder is the display name.
+          T="x/${{ needs.meta.outputs.display_name }}"
+          ls x
+          [ "$(ls x | wc -l)" = 1 ] && [ -d "$T" ] || { echo "top folder is not \"${T#x/}\""; exit 1; }
           fail=0
-          need() { if grep -qaF -- "$2" "$1"; then echo "ok: $(basename "$1") has \"$2\""; else echo "MISSING in $1: $2"; fail=1; fi; }
-          for m in WINE_FORCE_SSBS WINEVMEMMAXSIZE WINE_DISABLE_SFN; do need $T/files/lib/wine/aarch64-unix/ntdll.so $m; done
-          need $T/files/lib/wine/aarch64-unix/win32u.so WINE_ENABLE_HARDWARE_SCHEDULING
-          need $T/files/bin-arm64/wineserver "fsync: up and running"
-          need $T/files/bin-arm64/wineserver "/dev/ntsync"
+          need() { if grep -qaF -- "$2" "$1"; then echo "ok: ${1#$T/} has \"$2\""; else echo "MISSING in $1: $2"; fail=1; fi; }
+          for m in WINE_FORCE_SSBS WINEVMEMMAXSIZE WINE_DISABLE_SFN; do need "$T/files/lib/wine/aarch64-unix/ntdll.so" $m; done
+          need "$T/files/lib/wine/aarch64-unix/win32u.so" WINE_ENABLE_HARDWARE_SCHEDULING
+          need "$T/files/bin-arm64/wineserver" "fsync: up and running"
+          need "$T/files/bin-arm64/wineserver" "/dev/ntsync"
           if [ -n "${DROIDDECK_ESYNC_PATCH:-}" ]; then
-            need $T/files/bin-arm64/wineserver "droiddeck-esync: up and running"
+            need "$T/files/bin-arm64/wineserver" "droiddeck-esync: up and running"
           fi
+          # Tier 6: the trace lines that sit inside each fix (see the "Tier 6 fixes in the wine
+          # source" check for the code itself).
+          need "$T/files/lib/wine/aarch64-unix/ntdll.so" "force_anon: reading %p-%p into anonymous memory"
+          shell32s=$(cd "$T" && find files -name shell32.dll | LC_ALL=C sort)
+          echo "shell32.dll: $(echo $shell32s)"
+          [ "$(echo "$shell32s" | grep -c .)" -ge 2 ] || { echo "expected shell32.dll for more than one arch"; fail=1; }
+          for f in $shell32s; do need "$T/$f" "drive root %s: keeping the root backslash"; done
           echo "sharedgpures.sys: $(find x -name sharedgpures.sys | tr '\n' ' ')"
           [ -n "$(find x -name sharedgpures.sys)" ] || fail=1
-          cat $T/version
-          grep -Eqx "[0-9]+ ${NAME%-aarch64}" $T/version || { echo "bad version file"; fail=1; }
-          sha256sum $T/files/lib/wine/aarch64-unix/ntdll.so $T/files/bin-arm64/wineserver | tee sums.txt
+          cat "$T/version"
+          grep -Eqx "[0-9]+ ${NAME%-aarch64}" "$T/version" || { echo "bad version file"; fail=1; }
+          grep -F "\"${NAME%-aarch64}\"" "$T/compatibilitytool.vdf" || { echo "compatibilitytool.vdf: internal name is not ${NAME%-aarch64}"; fail=1; }
+          grep -F "\"display_name\" \"${{ needs.meta.outputs.display_name }}\"" "$T/compatibilitytool.vdf" || { echo "compatibilitytool.vdf: wrong display_name"; fail=1; }
+          # The old name must not survive anywhere a user or a tool reads it.
+          for n in "$NAME.tar.gz" "$(ls new)" "${T#x/}"; do
+            case "$n" in *Banner-Proton*) echo "old name in \"$n\""; fail=1 ;; esac
+          done
+          if grep -F Banner-Proton "$T/version" "$T/compatibilitytool.vdf" "$T/toolmanifest.vdf"; then echo "old name in the tool files"; fail=1; fi
+          tar -C x -xzf new/$NAME.tar.gz --wildcards '*/libavcodec.so*' '*/libavutil.so*' '*/libavformat.so*'
+          ls "$T"/files/lib/*/libav*
+          strings -a "$T"/files/lib/*/libavutil.so.* "$T"/files/lib/*/libavcodec.so.* 2>/dev/null | grep -i -m3 'FFmpeg version\|Proton-' || true
+          if grep -laF Banner-Proton "$T"/files/lib/*/libav*.so*; then echo "old name in FFmpeg"; fail=1; fi
+          (cd "$T" && sha256sum files/lib/wine/aarch64-unix/ntdll.so files/bin-arm64/wineserver $shell32s) | tee sums.txt
           exit $fail
       - name: Build info
         run: |
           NAME="${{ needs.meta.outputs.build_name }}"
           . banner-proton/PINS
           digest=$(docker buildx imagetools inspect "$STEAMRT_IMAGE" --format '{{json .Manifest.Digest}}' | tr -d '"' || true)
-          sha() { awk -v f="$1" '$2 ~ f"$" {print $1}' sums.txt; }
-          python3 - "$NAME" "$digest" "$(sha /aarch64-unix/ntdll.so)" "$(sha /bin-arm64/wineserver)" <<'EOF'
+          python3 - "$NAME" "$digest" <<'EOF'
           import json, os, subprocess, sys
-          name, digest, ntdll, wineserver = sys.argv[1:5]
+          name, digest = sys.argv[1:3]
+          sums = dict(reversed(l.split(None, 1)) for l in open('sums.txt').read().splitlines())
           pins = dict(l.split('=', 1) for l in open('banner-proton/PINS').read().splitlines() if '=' in l and not l.startswith('#'))
           pins = {k: v.strip('"') for k, v in pins.items()}
           wine = subprocess.run(['git', 'ls-tree', 'HEAD', 'wine'], capture_output=True, text=True).stdout.split()[2]
@@ -272,8 +314,8 @@ jobs:
             "valve_wine": {"branch": pins.get("VALVE_WINE_BRANCH"), "commit": pins.get("VALVE_WINE_COMMIT")},
             "cachyos": {"release": pins.get("CACHYOS_RELEASE"), "wine_branch": pins.get("CACHYOS_WINE_BRANCH"), "wine_commit": pins.get("CACHYOS_WINE_COMMIT")},
             "droiddeck_esync_patch": pins.get("DROIDDECK_ESYNC_PATCH") or None,
-            "build_dir": "/home/runner/work/Banner-Proton/Banner-Proton/build",
-            "sha256": {"files/lib/wine/aarch64-unix/ntdll.so": ntdll, "files/bin-arm64/wineserver": wineserver},
+            "build_dir": os.path.join(os.environ["GITHUB_WORKSPACE"], "build"),
+            "sha256": sums,
             "run_id": os.environ["GITHUB_RUN_ID"],
           }
           json.dump(info, open(name + '.build-info.json', 'w'), indent=2)
@@ -303,7 +345,7 @@ jobs:
           diff old-exports.txt new-exports.txt && echo "ntdll.so exports unchanged"
 
   release:
-    name: Prerelease
+    name: Release
     needs: [meta, assemble, verify, protocol]
     if: "!cancelled() && needs.verify.result == 'success' && needs.protocol.result == 'success' && inputs.publish && github.ref == 'refs/heads/main'"
     runs-on: ubuntu-24.04-arm
@@ -317,29 +359,29 @@ jobs:
         with:
           name: build-info
           path: out
-      - name: Publish prerelease
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           NAME="${{ needs.meta.outputs.build_name }}"
-          TAG="Banner-Proton-${{ needs.meta.outputs.version }}"
+          TAG="DroidDeck-Proton-${{ needs.meta.outputs.version }}"
           cd out
           sha512sum -c "$NAME.sha512sum"
           size=$(stat -c %s "$NAME.tar.gz")
           . ../banner-proton/PINS
           notes=$(mktemp)
           {
-            echo "Banner-Proton ${{ needs.meta.outputs.version }} for ARM64 (aarch64) Linux. Prerelease, not yet tested on devices."
+            echo "DroidDeck-Proton ${{ needs.meta.outputs.version }} for ARM64 (aarch64) Linux."
             echo
-            echo "Install: extract into \`compatibilitytools.d\` and pick \"Banner-Proton ${{ needs.meta.outputs.version }}\" in Steam."
+            echo "Install: extract into \`compatibilitytools.d\` and pick \"DroidDeck-Proton ${{ needs.meta.outputs.version }}\" in Steam."
             echo
             echo "| Pin | Value |"
             echo "|---|---|"
             echo "| GE-Proton (proton-ge-custom master, after $GE_PROTON_RELEASE) | \`$GE_PROTON_COMMIT\` |"
             echo "| Valve wine $VALVE_WINE_BRANCH | \`$VALVE_WINE_COMMIT\` |"
             echo "| CachyOS ($CACHYOS_RELEASE) wine | \`$CACHYOS_WINE_BRANCH\` @ \`$CACHYOS_WINE_COMMIT\` |"
-            echo "| Banner-Proton wine | \`$WINE_BRANCH\` @ \`$(git -C .. ls-tree HEAD wine | awk '{print $3}')\` |"
-            echo "| Banner-Proton | \`$GITHUB_SHA\` |"
+            echo "| DroidDeck-Proton wine | \`$WINE_BRANCH\` @ \`$(git -C .. ls-tree HEAD wine | awk '{print $3}')\` |"
+            echo "| DroidDeck-Proton | \`$GITHUB_SHA\` |"
             echo
             echo "SDK image: \`$STEAMRT_IMAGE\` (\`$(jq -r .sdk_image_digest "$NAME.build-info.json")\`)"
             echo
@@ -351,8 +393,8 @@ jobs:
           } > "$notes"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" --clobber
-            gh release edit "$TAG" --notes-file "$notes" --prerelease
+            gh release edit "$TAG" --notes-file "$notes" --prerelease=false --latest
           else
             gh release create "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" \
-              --target "$GITHUB_SHA" --prerelease --title "Banner-Proton ${{ needs.meta.outputs.version }}" --notes-file "$notes"
+              --target "$GITHUB_SHA" --latest --title "DroidDeck-Proton ${{ needs.meta.outputs.version }}" --notes-file "$notes"
           fi
