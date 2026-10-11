@@ -285,6 +285,10 @@ jobs:
           rc=0
           run_make make.log $goals || rc=$?
           if [ "$rc" = 0 ] && [ -n "$goals2" ]; then
+            # The first goals are complete; keep their stamps as old too. Proton's source check
+            # reports wine dirty on every make run, and an incremental wine post-build fails
+            # ("ln -s bin-arm64 bin": File exists).
+            find . -maxdepth 1 -type f -name '.*' -printf "$PWD/%f\n" >> bp-old-files.txt
             run_make make2.log $goals2 || rc=$?
           fi
           if [ "$rc" = 124 ] && [ "${{ inputs.timeslice }}" = true ]; then
