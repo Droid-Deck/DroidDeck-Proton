@@ -1,15 +1,31 @@
 name: Build Banner-Proton (aarch64)
 
+# Parallel build (see banner-proton/ci.sh and _group.yml):
+#
+#   graphics (dxvk, d7vk, dxvk-nvapi, dxvk-igdext, vkd3d-proton, vk layers) ─┐
+#   fex (FEX arm64ec/aarch64 + unixlib) ──────────────────────────────────────┤
+#   misc (wine-mono runtime, fonts, protonfixes, xrandr) ─────────────────────┼─> assemble ─> release
+#   media (ffmpeg, dav1d, xz, bzip2, speech, libxml2, ...) ─> wine ───────────┘
+#                                     wine: wine, then vkd3d, lsteamclient, steam.exe, vrclient, umu
+#
+# Each group's output is cached under a key made from its sources; a group whose key is already
+# cached is skipped. Only the wine group keeps the time-sliced stages (up to three).
+
 on:
   workflow_dispatch:
     inputs:
       publish:
-        description: "Publish the tarball as a GitHub prerelease"
+        description: "Publish the tarball as a GitHub prerelease (main only)"
         type: boolean
         default: true
+      compare_with:
+        description: "Release tag whose tarball the new one is compared with (file list, sizes, markers)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: build-aarch64-${{ github.ref_name }}
@@ -17,12 +33,18 @@ concurrency:
 
 jobs:
   meta:
-    name: Version
+    name: Version and cache keys
     runs-on: ubuntu-24.04-arm
     outputs:
       version: ${{ steps.v.outputs.version }}
       build_name: ${{ steps.v.outputs.build_name }}
       display_name: ${{ steps.v.outputs.display_name }}
+      keys: ${{ steps.k.outputs.keys }}
+      graphics_hit: ${{ steps.graphics.outputs.cache-hit }}
+      fex_hit: ${{ steps.fex.outputs.cache-hit }}
+      media_hit: ${{ steps.media.outputs.cache-hit }}
+      misc_hit: ${{ steps.misc.outputs.cache-hit }}
+      wine_hit: ${{ steps.wine.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v4
       - id: v
@@ -32,52 +54,180 @@ jobs:
           echo "build_name=Banner-Proton-$v-aarch64" >> "$GITHUB_OUTPUT"
           echo "display_name=Banner-Proton $v" >> "$GITHUB_OUTPUT"
           echo "Building Banner-Proton $v from $GITHUB_SHA"
+      - id: k
+        run: |
+          keys=$(banner-proton/ci.sh keys)
+          echo "keys=$keys" >> "$GITHUB_OUTPUT"
+          echo "$keys" | python3 -m json.tool
+      - id: graphics
+        uses: actions/cache/restore@v4
+        with: { path: /tmp/grp/graphics.tar.zst, key: "${{ fromJSON(steps.k.outputs.keys).graphics }}", lookup-only: true }
+      - id: fex
+        uses: actions/cache/restore@v4
+        with: { path: /tmp/grp/fex.tar.zst, key: "${{ fromJSON(steps.k.outputs.keys).fex }}", lookup-only: true }
+      - id: media
+        uses: actions/cache/restore@v4
+        with: { path: /tmp/grp/media.tar.zst, key: "${{ fromJSON(steps.k.outputs.keys).media }}", lookup-only: true }
+      - id: misc
+        uses: actions/cache/restore@v4
+        with: { path: /tmp/grp/misc.tar.zst, key: "${{ fromJSON(steps.k.outputs.keys).misc }}", lookup-only: true }
+      - id: wine
+        uses: actions/cache/restore@v4
+        with: { path: /tmp/grp/wine.tar.zst, key: "${{ fromJSON(steps.k.outputs.keys).wine }}", lookup-only: true }
 
-  stage1:
+  graphics:
     needs: meta
-    uses: ./.github/workflows/_stage.yml
+    if: needs.meta.outputs.graphics_hit != 'true'
+    uses: ./.github/workflows/_group.yml
     with:
+      group: graphics
+      keys: ${{ needs.meta.outputs.keys }}
+      goals: dxvk d7vk dxvk-nvapi dxvk-igdext vkd3d-proton dxvk-nvapi-vkreflex-layer pyroveil low_latency_layer vkbasalt
+      build_name: ${{ needs.meta.outputs.build_name }}
+      display_name: ${{ needs.meta.outputs.display_name }}
+
+  fex:
+    needs: meta
+    if: needs.meta.outputs.fex_hit != 'true'
+    uses: ./.github/workflows/_group.yml
+    with:
+      group: fex
+      keys: ${{ needs.meta.outputs.keys }}
+      goals: fex fex_unixlib @B@/dist/files/share/fex-emu/Config.json
+      build_name: ${{ needs.meta.outputs.build_name }}
+      display_name: ${{ needs.meta.outputs.display_name }}
+
+  misc:
+    needs: meta
+    if: needs.meta.outputs.misc_hit != 'true'
+    uses: ./.github/workflows/_group.yml
+    with:
+      group: misc
+      keys: ${{ needs.meta.outputs.keys }}
+      goals: "@B@/.wine-mono-dist @B@/dist/files/share/fonts protonfixes @B@/dist/files/bin-arm64/xrandr"
+      # The fonts install rule copies from obj-fonts on every run.
+      pack_keep: '^obj-fonts(/|$)'
+      build_name: ${{ needs.meta.outputs.build_name }}
+      display_name: ${{ needs.meta.outputs.display_name }}
+
+  media:
+    needs: meta
+    if: needs.meta.outputs.media_hit != 'true'
+    uses: ./.github/workflows/_group.yml
+    with:
+      group: media
+      keys: ${{ needs.meta.outputs.keys }}
+      goals: >-
+        dav1d bzip2 xz ffmpeg libxml2 libxkbcommon libpcap libsoup graphene wayland-protocols pipewire-alsa
+        openxr openfst kaldi vosk piper steam-overlay-wayland
+      # wine builds against the media libraries, so keep their install trees (dst-*).
+      pack_exclude: '^(obj-[^/]*|src-[^/]*|compile_commands|make[^/]*\.log|bp-[^/]*)(/|$)'
+      build_name: ${{ needs.meta.outputs.build_name }}
+      display_name: ${{ needs.meta.outputs.display_name }}
+
+  wine1:
+    needs: [meta, media]
+    if: >-
+      !cancelled() && needs.meta.result == 'success' && needs.meta.outputs.wine_hit != 'true' &&
+      (needs.media.result == 'success' || needs.media.result == 'skipped')
+    uses: ./.github/workflows/_group.yml
+    with:
+      group: wine
+      keys: ${{ needs.meta.outputs.keys }}
+      restore: media
+      goals: wine
+      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      ccache_size: 2G
+      timeslice: true
       stage: 1
       build_name: ${{ needs.meta.outputs.build_name }}
       display_name: ${{ needs.meta.outputs.display_name }}
 
-  stage2:
-    needs: [meta, stage1]
-    if: needs.stage1.outputs.done == 'false'
-    uses: ./.github/workflows/_stage.yml
+  wine2:
+    needs: [meta, wine1]
+    if: "!cancelled() && needs.wine1.outputs.done == 'false'"
+    uses: ./.github/workflows/_group.yml
     with:
+      group: wine
+      keys: ${{ needs.meta.outputs.keys }}
+      restore: media
+      goals: wine
+      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      ccache_size: 2G
+      timeslice: true
       stage: 2
       prev_stage: 1
       build_name: ${{ needs.meta.outputs.build_name }}
       display_name: ${{ needs.meta.outputs.display_name }}
 
-  stage3:
-    needs: [meta, stage2]
-    if: needs.stage2.outputs.done == 'false'
-    uses: ./.github/workflows/_stage.yml
+  wine3:
+    needs: [meta, wine2]
+    if: "!cancelled() && needs.wine2.outputs.done == 'false'"
+    uses: ./.github/workflows/_group.yml
     with:
+      group: wine
+      keys: ${{ needs.meta.outputs.keys }}
+      restore: media
+      goals: wine
+      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      ccache_size: 2G
+      timeslice: true
       stage: 3
       prev_stage: 2
       build_name: ${{ needs.meta.outputs.build_name }}
       display_name: ${{ needs.meta.outputs.display_name }}
 
-  stage4:
-    needs: [meta, stage3]
-    if: needs.stage3.outputs.done == 'false'
-    uses: ./.github/workflows/_stage.yml
+  assemble:
+    needs: [meta, graphics, fex, misc, media, wine1, wine2, wine3]
+    if: "!cancelled() && !failure() && needs.meta.result == 'success'"
+    uses: ./.github/workflows/_group.yml
     with:
-      stage: 4
-      prev_stage: 3
+      group: assemble
+      keys: ${{ needs.meta.outputs.keys }}
+      restore: graphics fex misc media wine
+      goals: dist
       build_name: ${{ needs.meta.outputs.build_name }}
       display_name: ${{ needs.meta.outputs.display_name }}
 
+  compare:
+    name: Compare with ${{ inputs.compare_with }}
+    needs: [meta, assemble]
+    if: "!cancelled() && needs.assemble.result == 'success' && inputs.compare_with != ''"
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.meta.outputs.build_name }}
+          path: new
+      - name: Compare file list, sizes and markers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME="${{ needs.meta.outputs.build_name }}"
+          mkdir old
+          gh release download "${{ inputs.compare_with }}" -R "$GITHUB_REPOSITORY" -p '*.tar.gz' -D old
+          ls -l old new
+          list() { tar -tvzf "$1" | awk '{ t=substr($1,1,1); n=$6; for(i=7;i<=NF;i++) n=n" "$i; sub("^[^/]*/","",n); print t, $1, (t=="-" ? $3 : "-"), n }' | LC_ALL=C sort -k4; }
+          list old/*.tar.gz > old.txt
+          list new/$NAME.tar.gz > new.txt
+          echo "entries: old $(wc -l < old.txt), new $(wc -l < new.txt)"
+          echo "== paths only in old:";  LC_ALL=C comm -23 <(awk '{print $4}' old.txt | sort) <(awk '{print $4}' new.txt | sort) | head -50
+          echo "== paths only in new:";  LC_ALL=C comm -13 <(awk '{print $4}' old.txt | sort) <(awk '{print $4}' new.txt | sort) | head -50
+          echo "== same path, different type/mode/size:"
+          join -1 4 -2 4 -o 0,1.1,1.2,1.3,2.1,2.2,2.3 <(sort -k4 old.txt) <(sort -k4 new.txt) | awk '$2!=$5 || $3!=$6 || $4!=$7' > diff.txt || true
+          wc -l < diff.txt; head -80 diff.txt
+          mkdir x
+          tar -C x -xzf new/$NAME.tar.gz --wildcards '*/ntdll.so' '*/win32u.so' '*sharedgpures.sys'
+          for m in WINE_FORCE_SSBS WINEVMEMMAXSIZE WINE_DISABLE_SFN; do
+            echo "$m in ntdll.so: $(find x -name ntdll.so -exec grep -c "$m" {} + | tr '\n' ' ')"
+          done
+          echo "WINE_ENABLE_HARDWARE_SCHEDULING in win32u.so: $(find x -name win32u.so -exec grep -c WINE_ENABLE_HARDWARE_SCHEDULING {} + | tr '\n' ' ')"
+          echo "sharedgpures.sys: $(find x -name sharedgpures.sys | tr '\n' ' ')"
+
   release:
     name: Prerelease
-    needs: [meta, stage1, stage2, stage3, stage4]
-    if: >-
-      always() && inputs.publish &&
-      (needs.stage1.outputs.done == 'true' || needs.stage2.outputs.done == 'true' ||
-       needs.stage3.outputs.done == 'true' || needs.stage4.outputs.done == 'true')
+    needs: [meta, assemble]
+    if: "!cancelled() && needs.assemble.result == 'success' && inputs.publish && github.ref == 'refs/heads/main'"
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4

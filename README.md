@@ -128,13 +128,19 @@ All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) i
 `steamrt4` arm64 Proton SDK image, like GE's aarch64 builds:
 
 - `Build Banner-Proton (aarch64)` (`.github/workflows/build-aarch64.yml`): GE's `configure.sh
-  --target-arch=arm64` and `make dist`, split into up to four chained stages that hand the build tree
-  to each other when one runner's time runs out. Then everything is stripped
+  --target-arch=arm64`, with the Proton make split into parallel jobs (`_group.yml`,
+  `banner-proton/ci.sh`): graphics (DXVK, d7vk, dxvk-nvapi, dxvk-igdext, vkd3d-proton, Vulkan layers),
+  FEX, misc (wine-mono runtime, fonts, protonfixes, xrandr) and media (FFmpeg, dav1d, xz, bzip2, speech,
+  libxml2, ...) run side by side; wine (then vkd3d, lsteamclient, steam.exe, vrclient, umu) follows
+  media, in up to three chained stages if one runner's time runs out; assemble runs the remaining
+  `make dist`. Then everything is stripped
   (`strip --strip-unneeded` for ELF, `llvm-strip --strip-unneeded` for PE, no debug files) and packed as
   `Banner-Proton-<version>-aarch64.tar.gz` plus `.sha512sum`, with the same layout as GE's tarball
-  (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). With "publish" it becomes a prerelease.
-- Caches: ccache for the native and the llvm-mingw cross compilers, the SDK image, and prebuilt
-  DXVK/vkd3d-proton/d7vk/dxvk-nvapi, FEX, FFmpeg and the speech libraries, keyed by their commits.
+  (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). With "publish" (on main) it
+  becomes a prerelease; "compare_with" compares the tarball with an earlier release.
+- Caches: each group's output, keyed by its sources (a group with a cached output is skipped), one
+  ccache per group for the native and the llvm-mingw cross compilers, and the SDK image. Older
+  entries of a group are deleted when a new one is saved.
 
 Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.GE-Proton.md), with
 `banner-proton/prep.sh` instead of `patches/protonprep-valve-staging.sh` and

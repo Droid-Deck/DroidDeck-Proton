@@ -1,0 +1,393 @@
+name: _group
+
+# One job of the parallel Banner-Proton (aarch64) build. See banner-proton/ci.sh.
+#
+# A group restores the outputs of the groups it depends on from the Actions cache, runs the container
+# make for its goals and saves its own output to the cache under its content key. The "assemble" group
+# restores everything, runs "make dist" for what is left (default prefix, fonts/gecko/icu/xalia
+# install, manifests), then strips and packs the tarball.
+#
+# With "timeslice" the make runs against a deadline: a stage that runs out of time packs the whole
+# build tree and ccache into an artifact and the next stage carries on from there.
+
+on:
+  workflow_call:
+    inputs:
+      group:
+        required: true
+        type: string
+      keys:
+        description: "JSON object of group output cache keys (from ci.sh keys)"
+        required: true
+        type: string
+      goals:
+        description: "make goals; @B@ is replaced by the build directory"
+        required: true
+        type: string
+      goals2:
+        description: "second make run (timed separately), optional"
+        required: false
+        type: string
+        default: ""
+      restore:
+        description: "space separated groups whose outputs this group needs"
+        required: false
+        type: string
+        default: ""
+      pack_exclude:
+        required: false
+        type: string
+        default: '^(obj-[^/]*|src-[^/]*|dst-[^/]*|compile_commands|make[^/]*\.log|bp-[^/]*)(/|$)'
+      pack_keep:
+        required: false
+        type: string
+        default: '^$'
+      ccache_size:
+        required: false
+        type: string
+        default: 1G
+      timeslice:
+        required: false
+        type: boolean
+        default: false
+      stage:
+        required: false
+        type: number
+        default: 1
+      prev_stage:
+        required: false
+        type: number
+        default: 0
+      build_name:
+        required: true
+        type: string
+      display_name:
+        required: true
+        type: string
+    outputs:
+      done:
+        description: "true when the group's make finished in this job"
+        value: ${{ jobs.build.outputs.done }}
+
+env:
+  CCACHE_DIR: /home/runner/.ccache
+  CCACHE_COMPRESS: "1"
+  STAGE_MINUTES: 330
+
+jobs:
+  build:
+    name: ${{ inputs.group }}${{ inputs.timeslice && format(' (stage {0})', inputs.stage) || '' }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 355
+    outputs:
+      done: ${{ steps.make.outputs.done }}
+    env:
+      CCACHE_MAXSIZE: ${{ inputs.ccache_size }}
+      GROUP: ${{ inputs.group }}
+      GROUP_KEY: ${{ fromJSON(inputs.keys)[inputs.group] || '' }}
+    steps:
+      - name: Start clock
+        run: echo "STAGE_START=$(date +%s)" >> "$GITHUB_ENV"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache /usr/share/swift /usr/local/share/powershell /usr/local/share/chromium \
+            /usr/local/lib/node_modules /usr/share/miniconda || true
+          docker image prune -af >/dev/null 2>&1 || true
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ccache zstd rsync llvm binutils >/dev/null
+          df -h /
+          nproc; free -g
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+
+      - name: Submodules
+        run: git submodule update --init --filter=tree:0 --recursive --jobs 8
+
+      - name: Read pins
+        run: |
+          . banner-proton/PINS
+          echo "STEAMRT_IMAGE=$STEAMRT_IMAGE" >> "$GITHUB_ENV"
+          echo "SDK_CACHE_KEY=sdk-$(echo "$STEAMRT_IMAGE" | tr '/:' '__')" >> "$GITHUB_ENV"
+          # Constant source mtime (2010-01-01); restored outputs always come from identical sources.
+          echo "EPOCH=1262304000" >> "$GITHUB_ENV"
+          test "$(git -C wine rev-parse HEAD)" = "$(git ls-tree HEAD wine | awk '{print $3}')"
+          git -C wine log -1 --format='wine: %H %s'
+          echo "group key: $GROUP_KEY"
+
+      - name: Prepare sources (GE protonprep without its wine section)
+        run: |
+          banner-proton/prep.sh
+          # Build without debug info. GE's x86_64 CI uses .github/patches/0001-build-strip-binaries-early.patch
+          # (-s in CFLAGS), but with the clang-based arm64 SDK "-s" is an unused argument in meson's
+          # compile checks (-Werror=unused-command-line-argument) and breaks e.g. dav1d's atomics test.
+          sed -i 's/^CFLAGS += -ggdb -ffunction-sections/CFLAGS += -ffunction-sections/' Makefile.in
+          grep -n '^CFLAGS += -ffunction-sections' Makefile.in
+
+      - name: Pin source mtimes
+        run: |
+          find . -path ./build -prune -o -name .git -prune -o -print0 | xargs -0 -r touch -h -d "@$EPOCH"
+
+      - name: Restore SDK image cache
+        id: sdk
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/sdk-image.tar.zst
+          key: ${{ env.SDK_CACHE_KEY }}
+
+      - name: Load SDK image
+        run: |
+          if [ -f /home/runner/sdk-image.tar.zst ]; then
+            zstd -dc /home/runner/sdk-image.tar.zst | docker load
+          else
+            docker pull "$STEAMRT_IMAGE"
+            docker save "$STEAMRT_IMAGE" | zstd -T0 -3 -o /home/runner/sdk-image.tar.zst
+          fi
+          docker image ls
+
+      - name: Save SDK image cache
+        if: steps.sdk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/sdk-image.tar.zst
+          key: ${{ env.SDK_CACHE_KEY }}
+        continue-on-error: true
+
+      - name: Drop the SDK image archive
+        run: rm -f /home/runner/sdk-image.tar.zst
+
+      # Outputs of the groups this one depends on (exact keys; they were saved earlier in this run
+      # or by an earlier run with the same sources).
+      - name: Restore graphics output
+        if: inputs.stage == 1 && contains(format(' {0} ', inputs.restore), ' graphics ')
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/grp/graphics.tar.zst
+          key: ${{ fromJSON(inputs.keys).graphics }}
+          fail-on-cache-miss: true
+      - name: Restore fex output
+        if: inputs.stage == 1 && contains(format(' {0} ', inputs.restore), ' fex ')
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/grp/fex.tar.zst
+          key: ${{ fromJSON(inputs.keys).fex }}
+          fail-on-cache-miss: true
+      - name: Restore media output
+        if: inputs.stage == 1 && contains(format(' {0} ', inputs.restore), ' media ')
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/grp/media.tar.zst
+          key: ${{ fromJSON(inputs.keys).media }}
+          fail-on-cache-miss: true
+      - name: Restore misc output
+        if: inputs.stage == 1 && contains(format(' {0} ', inputs.restore), ' misc ')
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/grp/misc.tar.zst
+          key: ${{ fromJSON(inputs.keys).misc }}
+          fail-on-cache-miss: true
+      - name: Restore wine output
+        if: inputs.stage == 1 && contains(format(' {0} ', inputs.restore), ' wine ')
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/grp/wine.tar.zst
+          key: ${{ fromJSON(inputs.keys).wine }}
+          fail-on-cache-miss: true
+
+      - name: Unpack group outputs
+        if: inputs.stage == 1 && inputs.restore != ''
+        run: |
+          for g in ${{ inputs.restore }}; do
+            ls -l /home/runner/grp/$g.tar.zst
+            banner-proton/ci.sh unpack /home/runner/grp/$g.tar.zst
+          done
+          rm -rf /home/runner/grp
+          du -sh build
+          echo "stamps kept as old: $(sort -u build/bp-old-files.txt | wc -l)"
+
+      - name: Restore previous stage
+        if: inputs.stage > 1
+        uses: actions/download-artifact@v4
+        with:
+          name: state-${{ inputs.group }}-stage${{ inputs.prev_stage }}
+          path: /home/runner/state
+
+      - name: Unpack previous stage
+        if: inputs.stage > 1
+        run: |
+          tar -C / -I zstd -xf /home/runner/state/state.tar.zst
+          rm -rf /home/runner/state
+          du -sh build "$CCACHE_DIR" || true
+
+      - name: Restore ccache
+        if: inputs.stage == 1 && inputs.group != 'assemble'
+        uses: actions/cache/restore@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-aarch64-${{ inputs.group }}-${{ github.run_id }}
+          restore-keys: ccache-aarch64-${{ inputs.group }}-
+
+      - name: Configure
+        run: |
+          IMG_PATH=$(docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$STEAMRT_IMAGE" | sed -n 's/^PATH=//p')
+          echo "image PATH: $IMG_PATH"
+          # ccache for the llvm-mingw cross compilers; the SDK image only wraps the native ones.
+          WRAP=/home/runner/ccache-wrap
+          mkdir -p "$WRAP"
+          for c in $(docker run --rm "$STEAMRT_IMAGE" ls /opt/llvm-mingw/bin | grep -E -- '-w64-mingw32-(gcc|g\+\+|clang|clang\+\+|cc|c\+\+)$'); do
+            ln -sf /usr/bin/ccache "$WRAP/$c"
+          done
+          mkdir -p build "$CCACHE_DIR"
+          cd build
+          ../configure.sh --build-name="${{ inputs.build_name }}" --display-name="${{ inputs.display_name }}" \
+            --target-arch=arm64 --container-engine=docker --proton-sdk-image="$STEAMRT_IMAGE" \
+            --docker-opts "-v $WRAP:$WRAP -e PATH=$WRAP:$IMG_PATH"
+          touch -h -d "@$EPOCH" Makefile
+          cat Makefile
+
+      - name: Build
+        id: make
+        working-directory: build
+        run: |
+          ccache -z >/dev/null || true
+          goals='${{ inputs.goals }}'
+          goals2='${{ inputs.goals2 }}'
+          goals=${goals//@B@/$PWD}
+          goals2=${goals2//@B@/$PWD}
+          run_make() {
+            local log=$1; shift
+            local budget
+            if [ "${{ inputs.timeslice }}" = true ]; then
+              budget=$(( STAGE_MINUTES*60 - ($(date +%s) - STAGE_START) - 30*60 ))
+            else
+              budget=$(( 350*60 - ($(date +%s) - STAGE_START) ))
+            fi
+            echo "make budget: $((budget/60)) minutes"
+            local t0=$(date +%s) rc
+            set +e
+            timeout -s TERM "$budget" ../banner-proton/ci.sh make "$@" \
+              > >(tee -a "$log" | grep --line-buffered -E '^(:: |make.*Error|.*error:|make goals|stamps kept)') 2>&1
+            rc=$?
+            set -e
+            echo "make exit code: $rc after $(( ($(date +%s) - t0) / 60 )) min"
+            return $rc
+          }
+          rc=0
+          run_make make.log $goals || rc=$?
+          if [ "$rc" = 0 ] && [ -n "$goals2" ]; then
+            run_make make2.log $goals2 || rc=$?
+          fi
+          if [ "$rc" = 124 ] && [ "${{ inputs.timeslice }}" = true ]; then
+            echo "Stage deadline reached; stopping the build container."
+            docker ps -q | xargs -r docker kill -s TERM || true
+            sleep 60
+            docker ps -q | xargs -r docker kill || true
+            echo "done=false" >> "$GITHUB_OUTPUT"
+          elif [ "$rc" = 0 ]; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
+          else
+            tail -n 200 make.log; [ -f make2.log ] && tail -n 200 make2.log
+            exit "$rc"
+          fi
+          ccache -s || true
+          # Anything (re)built here from a restored group would show up as configure/build lines.
+          if [ -n "${{ inputs.restore }}" ]; then
+            echo "components configured/built in this job:"
+            grep -hE '^:: (configuring|building|autoreconfing) ' make*.log | sort | uniq -c || echo "  (none)"
+          fi
+
+      - name: Upload make logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: make-log-${{ inputs.group }}-stage${{ inputs.stage }}
+          path: build/make*.log
+          retention-days: 7
+
+      - name: Pack build state for the next stage
+        if: steps.make.outputs.done == 'false'
+        run: |
+          df -h /
+          tar -C / -I 'zstd -T0 -3' -cf /home/runner/state.tar.zst "${GITHUB_WORKSPACE#/}/build" home/runner/.ccache
+          ls -lh /home/runner/state.tar.zst
+
+      - name: Upload build state
+        if: steps.make.outputs.done == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: state-${{ inputs.group }}-stage${{ inputs.stage }}
+          path: /home/runner/state.tar.zst
+          compression-level: 0
+          retention-days: 2
+
+      - name: Pack group output
+        if: steps.make.outputs.done == 'true' && inputs.group != 'assemble'
+        run: |
+          mkdir -p /home/runner/grp
+          banner-proton/ci.sh pack /home/runner/grp/$GROUP.tar.zst '${{ inputs.pack_exclude }}' '${{ inputs.pack_keep }}'
+
+      - name: Save group output
+        if: steps.make.outputs.done == 'true' && inputs.group != 'assemble'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/grp/${{ inputs.group }}.tar.zst
+          key: ${{ env.GROUP_KEY }}
+
+      - name: Save ccache
+        if: steps.make.outputs.done == 'true' && inputs.group != 'assemble'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/.ccache
+          key: ccache-aarch64-${{ inputs.group }}-${{ github.run_id }}-${{ github.run_attempt }}
+        continue-on-error: true
+
+      # Keep one entry per group on this branch: drop older outputs and ccaches of the same group.
+      - name: Evict older cache entries of this group
+        if: steps.make.outputs.done == 'true' && inputs.group != 'assemble'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          keep_ccache="ccache-aarch64-$GROUP-${{ github.run_id }}-${{ github.run_attempt }}"
+          gh cache list -R "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --limit 200 --json id,key,sizeInBytes \
+            --jq '.[] | "\(.id) \(.key) \(.sizeInBytes)"' |
+          while read -r id key size; do
+            case "$key" in
+              "$GROUP_KEY"|"$keep_ccache") continue ;;
+              grp-$GROUP-*|ccache-aarch64-$GROUP-*)
+                echo "deleting $key ($((size/1048576)) MB)"
+                gh cache delete -R "$GITHUB_REPOSITORY" "$id" || true ;;
+            esac
+          done
+
+      - name: Strip and package
+        if: steps.make.outputs.done == 'true' && inputs.group == 'assemble'
+        working-directory: build
+        run: |
+          NAME="${{ inputs.build_name }}"
+          du -sh dist
+          python3 ../banner-proton/strip-dist.py dist/files strip "$(command -v llvm-strip || ls /usr/bin/llvm-strip-* | sort -V | tail -1)"
+          du -sh dist
+          find dist -name '*.debug' -print -delete
+          rm -rf "$NAME"
+          rsync -a --delete dist/ "$NAME/"
+          tar --owner=0 --group=0 --numeric-owner -czf "$NAME.tar.gz" "$NAME"
+          sha512sum "$NAME.tar.gz" > "$NAME.sha512sum"
+          ls -l "$NAME.tar.gz"; cat "$NAME.sha512sum"
+          cat "$NAME/compatibilitytool.vdf" "$NAME/toolmanifest.vdf" "$NAME/version"
+
+      - name: Upload tarball
+        if: steps.make.outputs.done == 'true' && inputs.group == 'assemble'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.build_name }}
+          path: |
+            build/${{ inputs.build_name }}.tar.gz
+            build/${{ inputs.build_name }}.sha512sum
+          compression-level: 0
+          retention-days: 14
