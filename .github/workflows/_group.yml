@@ -119,6 +119,11 @@ jobs:
           test "$(git -C wine rev-parse HEAD)" = "$(git ls-tree HEAD wine | awk '{print $3}')"
           git -C wine log -1 --format='wine: %H %s'
           echo "group key: $GROUP_KEY"
+          # dist/version is "<build time> $(git describe --tags)"; protonfixes needs a name there
+          # ("<timestamp> <name>"), so tag the build commit with the release name.
+          name="${{ inputs.build_name }}"
+          git tag -f "${name%-aarch64}" HEAD
+          git describe --tags
 
       - name: Prepare sources (GE protonprep without its wine section)
         run: |
@@ -364,6 +369,15 @@ jobs:
                 gh cache delete -R "$GITHUB_REPOSITORY" "$id" || true ;;
             esac
           done
+
+      - name: Check dist/version
+        if: steps.make.outputs.done == 'true' && inputs.group == 'assemble'
+        run: |
+          cat build/dist/version
+          name="${{ inputs.build_name }}"
+          grep -Eqx "[0-9]+ ${name%-aarch64}" build/dist/version
+          # The same parse as protonfixes' ProtonVersion (util.py).
+          python3 -c 'import sys; p=open(sys.argv[1]).read().split(); assert len(p)==2 and p[0].isnumeric(), p; print("protonfixes version:", p[1])' build/dist/version
 
       - name: Strip and package
         if: steps.make.outputs.done == 'true' && inputs.group == 'assemble'
