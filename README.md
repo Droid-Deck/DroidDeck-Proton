@@ -23,7 +23,7 @@ tag on the wine branch so it can be bisected or turned off on its own:
 | Tier | What | Where | Tag |
 |---|---|---|---|
 | 1 | Valve Proton wine, `bleeding-edge` (the base Proton Experimental's bleeding-edge builds use) | `ValveSoftware/wine` | `bp-11.7-tier1` |
-| 2 | Everything GE-Proton applies to wine (wine-staging, EM-11 wine-wayland, game fixes, hotfixes, video rework, FSR, Reflex, OptiScaler, DS5, Bluetooth LE ...) | GE's own `protonprep` wine section, run unmodified | `bp-11.7-tier2` |
+| 2 | Everything GE-Proton applies to wine (wine-staging, EM-11 wine-wayland, game fixes, hotfixes, video rework, FSR, Reflex, OptiScaler, DS5, Bluetooth LE ...) | GE's own `protonprep` wine section, run unmodified; wine patches GE adds later come as tier 2 follow-up commits | `bp-11.7-tier2`, follow-ups `bp-11.7-tier2.1` |
 | 3 | CachyOS game fixes that GE does not already carry | `CachyOS/wine-cachyos` | `bp-11.7-tier3` |
 | 4 | Our portable Wine fixes from the Bannerlator layers | `The412Banner/proton-wine` `proton_11.7.1-GE` | `bp-11.7-tier4` |
 | 5 | DroidDeck's esync (eventfd and shared memory sync in wineserver and ntdll) | `Droid-Deck/DroidDeck-Components` `droiddeck-esync` | `bp-11.7-tier5` |
@@ -35,16 +35,17 @@ The wine source is [`The412Banner/proton-wine`](https://github.com/The412Banner/
 media stack ...) is GE-Proton's, prepared by GE's own `patches/protonprep-valve-staging.sh`
 (`banner-proton/prep.sh` runs it without its wine section, because tier 2 already contains it).
 The `Verify wine tier 2` workflow re-runs GE's wine section on tier 1 and checks the result is
-exactly tier 2.
+exactly tier 2 plus its follow-up commits (`WINE_TIER2_FOLLOWUPS` in `banner-proton/PINS`).
 
-### Pins (version 11-7.3)
+### Pins (version 11-7.4)
 
 | | Commit |
 |---|---|
-| GE-Proton (`proton-ge-custom` master, includes everything in GE-Proton11-7 and the work after it) | `49c50f4b2546b06cea3493803f18a13bb2a2f0c8` |
+| GE-Proton (`proton-ge-custom` master, includes everything in GE-Proton11-7 and the work after it) | `8d7a8cd2966e2f3e409f9b0551ec90def7cd2b87` |
+| DXVK (`doitsujin/dxvk` master; GE master still pins `71ec7b5b`, one commit older) | `2c94c5f25cf75c313ef2a55b2e0c9276d67c28d6` |
 | Valve wine `bleeding-edge` (same commit GE master pins) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
 | CachyOS wine, `cachyos_11.0_20261001/main` (wine of proton-cachyos `cachyos-11.0-20261005-slr`) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| DroidDeck-Proton wine, `banner-proton/11.7` | `2786ea82481dbc169ce00e76a1bd56b81d7b58a1` |
+| DroidDeck-Proton wine, `banner-proton/11.7` | `3083925364b21959461c2843d5c7015cf62d3309` |
 
 The machine-readable list is `banner-proton/PINS`; the version is `banner-proton/VERSION`.
 
@@ -58,6 +59,18 @@ rendering + EM fixups, wine-staging (`patchinstall.py --all` with GE's exclusion
 staging sets), GE game patches, hotfixes and backports, pending upstream patches, and GE's custom patches
 (FSR fullscreen hack, NVIDIA Reflex, OptiScaler, GE video rework, proton-ds5-haptic, Bluetooth LE, ...).
 Every patch applied cleanly; nothing was skipped. See GE's script for the full list and its credits.
+
+Tier 2 follow-ups: wine patches GE added after `49c50f4b`, committed on top of the wine branch (the
+tier commits and tags are never rewritten) and tagged in order:
+
+- `bp-11.7-tier2.1` (GE `8d7a8cd2`): `em-fixups/0067-winewayland-preserve-renderer-subsurfaces-when-minimized.patch`
+  (GE `ad73744b`, Guild Wars Reforged alt+tab from fullscreen), applied unmodified. Only
+  `winewayland.drv` changes, which no later tier touches.
+
+GE's other changes up to `8d7a8cd2` are outside wine and come in through the `ge-master` merge, built the
+way GE builds them: the FNA stencil-reference patches for Wine-Mono (`patches/wine-mono/fna/`, applied by
+GE's `prepare.sh`; the build replaces `WineMono.FNA.dll`, Meridian: New World rendering, GE `fcd74c74`) and
+the protonfixes bump with the Project Torque fix (GE `8d7a8cd2`).
 
 ### Tier 3: CachyOS
 
@@ -172,7 +185,8 @@ All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) i
   libxml2, ...) run side by side; wine (then vkd3d, lsteamclient, steam.exe, vrclient, umu) follows
   media, in up to three chained stages if one runner's time runs out; assemble runs the remaining
   `make dist`. Then everything is stripped
-  (`strip --strip-unneeded` for ELF, `llvm-strip --strip-unneeded` for PE, no debug files) and packed as
+  (`strip --strip-unneeded` for ELF, `llvm-strip --strip-unneeded` for PE, no debug files; Wine-Mono's
+  separate `.dbg`/`.pdb` debug-symbol files are deleted, about 40 MB) and packed as
   `DroidDeck-Proton-<version>-aarch64.tar.gz` plus `.sha512sum`, with the same layout as GE's tarball
   (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). The tarball's top folder is
   `DroidDeck-Proton <version>` (DroidDeck shows a tool by its folder name), the tool's internal name

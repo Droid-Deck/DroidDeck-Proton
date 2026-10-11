@@ -358,6 +358,17 @@ def try_copy(src, dst, prefix=None, add_write_perm=True, copy_metadata=False, op
         else:
             raise
 
+#dxvk-igdext is only built for x86_64-windows (there is no i386 or aarch64 build). On ARM64 the
+#host PE arch is aarch64-windows, so look there first and fall back to the x86_64 build, which is
+#what x86_64 games running under ARM64EC load. Returns None when no build is shipped, so the copy
+#is skipped instead of failing with "No such file or directory" on every launch.
+def find_igdext_dll():
+    for arch in dict.fromkeys((g_proton.host_pe_arch, "x86_64-windows")):
+        dll = g_proton.lib_dir + "wine/igdext/" + arch + "/igdext64.dll"
+        if file_exists(dll, follow_symlinks=True):
+            return dll
+    return None
+
 #rsync-like directory sync, deletes files at dst not present in src
 def dir_sync(dst, src):
     if not os.path.exists(dst):
@@ -1561,13 +1572,15 @@ class CompatData:
                                  link_debug=True)
 
                 intc_store = "drive_c/windows/system32/DriverStore/FileRepository/igd_faux.inf_1"
-                makedirs(os.path.join(self.prefix_dir, intc_store))
-                try_copy(g_proton.arch_pe_dir("wine/igdext", False) + "igdext64.dll",
-                         intc_store,
-                         optional=True,
-                         prefix=self.prefix_dir,
-                         track_file=tracked_files,
-                         link_debug=True)
+                igdext_dll = find_igdext_dll()
+                if igdext_dll:
+                    makedirs(os.path.join(self.prefix_dir, intc_store))
+                    try_copy(igdext_dll,
+                             intc_store,
+                             optional=True,
+                             prefix=self.prefix_dir,
+                             track_file=tracked_files,
+                             link_debug=True)
 
             setup_game_dir_drive()
             setup_steam_dir_drive()
