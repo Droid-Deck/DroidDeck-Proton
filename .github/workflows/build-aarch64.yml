@@ -253,7 +253,7 @@ jobs:
           . banner-proton/PINS
           mkdir x
           tar -C x -xzf new/$NAME.tar.gz --wildcards '*/version' '*/aarch64-unix/ntdll.so' '*/aarch64-unix/win32u.so' \
-            '*/bin-arm64/wineserver' '*sharedgpures.sys' '*-windows/shell32.dll'
+            '*/bin-arm64/wineserver' '*sharedgpures.sys' '*-windows/shell32.dll' '*/compatibilitytool.vdf' '*/toolmanifest.vdf'
           # The tarball's one top folder is the display name.
           T="x/${{ needs.meta.outputs.display_name }}"
           ls x
