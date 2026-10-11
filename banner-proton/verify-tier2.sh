@@ -28,11 +28,12 @@ cd "$WORK"
 . "$WORK/ge-wine.sh"
 RUN
 bash "$WORK/run.sh" > "$WORK/log" 2>&1 || true
+echo "GE wine section output (tail):"; tail -n 15 "$WORK/log"
 if [ -s "$FAILS" ]; then echo "GE patches that failed:"; cat "$FAILS"; exit 1; fi
 
 cd "$WORK/wine"
-find . -path ./.git -prune -o \( -name '*.orig' -o -name '*.rej' \) -print -delete
-git rm -q --cached --ignore-unmatch configure include/config.h.in
+find . -name .git -prune -o \( -name '*.orig' -o -name '*.rej' \) -print0 | xargs -0 -r rm -f
+git rm -q -f --cached --ignore-unmatch configure include/config.h.in
 rm -f configure include/config.h.in
 git add -A
 if git diff --cached --quiet "$T2" --; then
