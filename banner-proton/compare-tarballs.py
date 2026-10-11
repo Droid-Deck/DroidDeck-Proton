@@ -41,3 +41,25 @@ for p in content:
     print('  ' + p)
 same = len(set(old) & set(new)) - len(changed) - len(content)
 print(f'identical (type, mode, size, link target, sha256): {same}')
+
+# For a few same-size files that differ, show how many bytes differ and where (timestamps differ
+# in a few bytes at fixed offsets; real code changes differ in many).
+def read(path, names):
+    found = {}
+    with tarfile.open(path) as t:
+        for m in t:
+            name = m.name.split('/', 1)[1] if '/' in m.name else ''
+            if name in names:
+                found[name] = t.extractfile(m).read()
+    return found
+
+pick = []
+for prefix in ('files/lib/aarch64-linux-gnu/', 'files/lib/vkd3d/', 'files/lib/wine/aarch64-windows/',
+               'files/lib/wine/i386-windows/', 'files/lib/wine/dxvk/', 'files/lib/wine/aarch64-unix/'):
+    pick += [p for p in content if p.startswith(prefix)][:2]
+if pick:
+    a, b = read(sys.argv[1], set(pick)), read(sys.argv[2], set(pick))
+    print('byte differences in samples:')
+    for p in pick:
+        diff = [i for i, (x, y) in enumerate(zip(a[p], b[p])) if x != y]
+        print(f'  {p}: {len(diff)} bytes differ, offsets {[hex(i) for i in diff[:8]]}')

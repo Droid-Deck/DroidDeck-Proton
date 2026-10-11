@@ -15,7 +15,7 @@ Status: **prerelease / proof of concept.** Builds come from GitHub Actions; devi
 ## How it is put together
 
 Banner-Proton is a fork of [proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)
-(its history is kept on the `ge-master` branch). Wine is built in four tiers, and every tier is a
+(its history is kept on the `ge-master` branch). Wine is built in five tiers, and every tier is a
 tag on the wine branch so it can be bisected or turned off on its own:
 
 | Tier | What | Where | Tag |
@@ -24,6 +24,7 @@ tag on the wine branch so it can be bisected or turned off on its own:
 | 2 | Everything GE-Proton applies to wine (wine-staging, EM-11 wine-wayland, game fixes, hotfixes, video rework, FSR, Reflex, OptiScaler, DS5, Bluetooth LE ...) | GE's own `protonprep` wine section, run unmodified | `bp-11.7-tier2` |
 | 3 | CachyOS game fixes that GE does not already carry | `CachyOS/wine-cachyos` | `bp-11.7-tier3` |
 | 4 | Our portable Wine fixes from the Bannerlator layers | `The412Banner/proton-wine` `proton_11.7.1-GE` | `bp-11.7-tier4` |
+| 5 | DroidDeck's esync (eventfd and shared memory sync in wineserver and ntdll) | `Droid-Deck/DroidDeck-Components` `droiddeck-esync` | `bp-11.7-tier5` |
 
 The wine source is [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine) branch
 `banner-proton/11.7`; this repository's `wine` submodule points at it. Everything outside wine
@@ -33,14 +34,14 @@ media stack ...) is GE-Proton's, prepared by GE's own `patches/protonprep-valve-
 The `Verify wine tier 2` workflow re-runs GE's wine section on tier 1 and checks the result is
 exactly tier 2.
 
-### Pins (version 11-7.1)
+### Pins (version 11-7.2)
 
 | | Commit |
 |---|---|
 | GE-Proton (`proton-ge-custom` master, includes everything in GE-Proton11-7 and the work after it) | `49c50f4b2546b06cea3493803f18a13bb2a2f0c8` |
 | Valve wine `bleeding-edge` (same commit GE master pins) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
 | CachyOS wine, `cachyos_11.0_20261001/main` (wine of proton-cachyos `cachyos-11.0-20261005-slr`) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| Banner-Proton wine, `banner-proton/11.7` | `709d1c14a84338514032e2053bcad02cec91c9ee` |
+| Banner-Proton wine, `banner-proton/11.7` | `96e8477b8bc178c0585b427968c3910d7649636a` |
 
 The machine-readable list is `banner-proton/PINS`; the version is `banner-proton/VERSION`.
 
@@ -122,6 +123,17 @@ Not carried, with the reason:
 - Everything Android specific (bionic patches, sysvshm, shm_utils, 16 KB alignment), lsteamclient
   server browser, userspace ntsync, DirectAudio, winewayland touch/HDR and the XP theme.
 
+### Tier 5: DroidDeck esync
+
+`droiddeck-esync/patches/valve-11/0001-droiddeck-esync.patch` from
+[Droid-Deck/DroidDeck-Components](https://github.com/Droid-Deck/DroidDeck-Components) at `780ab619de`
+(maxjivi05), applied unchanged with `--fuzz=0` (line offsets only). It adds eventfd and shared memory
+sync to wineserver and the unix side of ntdll, following Elizabeth Figura's esync design, so DroidDeck
+needs no separate esync pack for Banner-Proton. wineserver still picks `/dev/ntsync`, then fsync, then
+esync (`WINEESYNC` nonzero), then server-side sync, and reports `droiddeck-esync: up and running.` when
+it runs esync. The patch changes no wineserver request and no ntdll.so export; CI checks both (the
+protocol headers against tier 4, and the exports against the release given as `compare_with`).
+
 ## Building
 
 All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) inside Valve's
@@ -154,6 +166,7 @@ Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.
 - [CachyOS](https://github.com/CachyOS/proton-cachyos) for proton-cachyos and wine-cachyos.
 - NelloKudo (Nello De Gregoris) for the media and game fixes, Etaash Mathamsetty for the EM work,
   and every patch author named above and in the commit history.
+- Elizabeth Figura for esync, fsync and ntsync, and maxjivi05 / DroidDeck for droiddeck-esync.
 - FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and the other projects bundled by GE-Proton.
 
 ## License
