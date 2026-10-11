@@ -135,9 +135,10 @@ jobs:
       group: wine
       keys: ${{ needs.meta.outputs.keys }}
       restore: media
-      goals: wine
-      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64 headers.
-      goals2: vulkan-headers spirv-headers vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64
+      # headers, so build every header arch in the first make, before vrclient's.
+      goals: wine vulkan-headers spirv-headers
+      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
       ccache_size: 2G
       timeslice: true
       stage: 1
@@ -152,9 +153,10 @@ jobs:
       group: wine
       keys: ${{ needs.meta.outputs.keys }}
       restore: media
-      goals: wine
-      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64 headers.
-      goals2: vulkan-headers spirv-headers vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64
+      # headers, so build every header arch in the first make, before vrclient's.
+      goals: wine vulkan-headers spirv-headers
+      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
       ccache_size: 2G
       timeslice: true
       stage: 2
@@ -170,9 +172,10 @@ jobs:
       group: wine
       keys: ${{ needs.meta.outputs.keys }}
       restore: media
-      goals: wine
-      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64 headers.
-      goals2: vulkan-headers spirv-headers vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
+      # vrclient includes vulkan.h for arm64ec too, but its rules only depend on the aarch64
+      # headers, so build every header arch in the first make, before vrclient's.
+      goals: wine vulkan-headers spirv-headers
+      goals2: vkd3d lsteamclient steamexe vrclient umuexe discord-rpc-bridge
       ccache_size: 2G
       timeslice: true
       stage: 3
