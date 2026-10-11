@@ -79,8 +79,11 @@ jobs:
       - name: Prepare sources (GE protonprep without its wine section)
         run: |
           banner-proton/prep.sh
-          # GE's CI strips binaries at compile time; keep doing the same.
-          patch -Np1 -i ./.github/patches/0001-build-strip-binaries-early.patch
+          # Build without debug info. GE's x86_64 CI uses .github/patches/0001-build-strip-binaries-early.patch
+          # (-s in CFLAGS), but with the clang-based arm64 SDK "-s" is an unused argument in meson's
+          # compile checks (-Werror=unused-command-line-argument) and breaks e.g. dav1d's atomics test.
+          sed -i 's/^CFLAGS += -ggdb -ffunction-sections/CFLAGS += -ffunction-sections/' Makefile.in
+          grep -n '^CFLAGS += -ffunction-sections' Makefile.in
 
       - name: Pin source mtimes
         run: |
