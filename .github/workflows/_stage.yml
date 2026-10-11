@@ -201,7 +201,7 @@ jobs:
           cd build
           ../configure.sh --build-name="${{ inputs.build_name }}" --display-name="${{ inputs.display_name }}" \
             --target-arch=arm64 --container-engine=docker --proton-sdk-image="$STEAMRT_IMAGE" \
-            --docker-opts="-v $WRAP:$WRAP -e PATH=$WRAP:$IMG_PATH"
+            --docker-opts "-v $WRAP:$WRAP -e PATH=$WRAP:$IMG_PATH"
           touch -h -d "@$EPOCH" Makefile
           cat Makefile
 
