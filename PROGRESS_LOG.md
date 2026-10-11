@@ -4,6 +4,15 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 
 ## 2026-10-11
 
+### In DroidDeck: third Proton source (DroidDeck #588, merged `78fcb60`)
+- **Install from the app:** DroidDeck-Proton is listed in Setup › Proton versions and the Components Proton list, next to GE and CachyOS, with update checks for all three.
+- **Device-proven:** Get → download → sha512 check → install of 11-7.5 in under a minute; it shows as "DroidDeck-Proton 11-7.5 (Compatible)"; DOOMBLADE ran on it with esync and FEX unixlibs.
+- **Signed DroidDeck main APK** staged as `DroidDeck-main-78fcb60f.apk`.
+
+### Found during testing
+- **FEX has no version name** in our builds (DroidDeck shows "FEX (build without a version name)"; GE shows `FEX-2609-41-g82510eb`). Likely the FEX submodule is checked out without tags. Fix in the next build.
+- **Tier 6 SD-card fix in use:** Half-Life 2 from the SD library loaded every DLL from the noexec card. Its slow launch (6–9 min to the menu) is Android FUSE + PRoot file lookups, and GE-Proton11-7 is just as slow, so the layer is not the cause.
+
 ### 11-7.5: only release, Latest
 - **Release:** `DroidDeck-Proton-11-7.5` (main `0d09ab73`, wine `banner-proton/11.7` @ `847635ca`, run 38160269780) promoted from prerelease to full release and Latest. Notes rewritten in the short layout.
 - **Cleanup:** releases and tags 11-7.3 and 11-7.4 deleted; 11-7.5 is the only release.
@@ -47,10 +56,9 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 
 ## Open items
 - **SD-card fix (tier 6):** device test owed. Run a game from DroidDeck's SD-card "Second library" with `WINEDEBUG=+virtual` and look for `force_anon: reading` and no "noexec filesystem?".
-- **Strip:** `files/share/xalia/xalia.pdb` (1.4 MB) is still shipped.
+- **Next build:** fetch FEX tags so FEX reports its version; strip `files/share/xalia/xalia.pdb` (1.4 MB).
 - **Parked:**
   - `.tar.xz` packing (about 640 → 370 MB download)
   - CachyOS extras: low-latency DXVK/VKD3D, DXVK-Sarek with Armada's probe tweak, small script options; GStreamer only if needed
   - Feature ideas: ARM game-fix DB, FEX profiles, pre-installed runtimes, Adreno defaults
-- **DroidDeck integration:** add DroidDeck-Proton as a source in Setup › Proton versions (`droiddeck-proton-extra`, `ProtonExtras.kt`).
 - **Tracking:** CI should follow new GE releases and rebase tiers 2.1–7 on each one.
