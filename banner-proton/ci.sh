@@ -46,8 +46,14 @@ keys() {
 # Run the container make for the given goals, with every restored stamp marked as old (-o).
 cmake_() {
     cd "$B"
-    local docker_base
+    # The outer Makefile.in passes BASE_SOURCE_DATE_EPOCH to the container make through MFLAGS. Every
+    # group job uses the commit time, so all of them (and cached outputs) agree on it.
+    export SOURCE_DATE_EPOCH; SOURCE_DATE_EPOCH=$(git -C "$ROOT" log -1 --format=%ct)
+    local docker_base mflags
     docker_base=$(make -s --no-print-directory --eval='bp-docker-base: ; @echo $(DOCKER_BASE)' bp-docker-base)
+    mflags=$(make -s --no-print-directory --eval='bp-mflags: ; @echo $(filter BASE_SOURCE_DATE_EPOCH=%,$(MFLAGS))' bp-mflags)
+    echo "$mflags"
+    [[ $mflags =~ ^BASE_SOURCE_DATE_EPOCH=[0-9]+$ ]]
     mkdir -p "$CCACHE_DIR" "${CARGO_HOME:-$HOME/.cargo}"
     local olds=()
     if [ -f "$OLD_LIST" ]; then
@@ -56,7 +62,7 @@ cmake_() {
     echo "make goals: $*"
     echo "stamps kept as old: $(( ${#olds[@]} / 2 ))"
     # shellcheck disable=SC2086
-    $docker_base make -j"$(nproc)" -f Makefile CONTAINER=1 "${olds[@]}" "$@"
+    $docker_base make -j"$(nproc)" -f Makefile CONTAINER=1 $mflags "${olds[@]}" "$@"
 }
 
 # Pack the build directory, minus build trees and minus what was restored from other groups.
