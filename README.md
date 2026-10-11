@@ -1,238 +1,187 @@
 # DroidDeck-Proton
 
-_Formerly Banner-Proton (releases up to 11-7.2 carry the old tag and file names)._
-
-DroidDeck-Proton is a GE-Proton based Proton build for **ARM64 (aarch64) Linux**. It is made for
-[DroidDeck](https://github.com/Droid-Deck/DroidDeck), which runs Valve's Steam client in an Arch Linux ARM
-rootfs and runs Windows games through ARM64 Proton with FEX. It installs like any other Proton tool:
-extract the release tarball into `compatibilitytools.d` and pick **DroidDeck-Proton &lt;version&gt;** in Steam.
+A GE-Proton based Proton build for **ARM64 (aarch64) Linux**, made for
+[DroidDeck](https://github.com/Droid-Deck/DroidDeck): Valve's Steam client in an Arch Linux ARM rootfs,
+running Windows games through ARM64 Proton with FEX.
 
 > [!Important]
-> DroidDeck-Proton is an unofficial build. It is **not** GE-Proton, Proton-CachyOS or Valve's Proton, and
-> it is not affiliated with GloriousEggroll, CachyOS or Valve. Please do not report DroidDeck-Proton
-> problems to those projects; open an issue here instead.
+> DroidDeck-Proton is an unofficial build. It is **not** GE-Proton, Proton-CachyOS or Valve's Proton and is
+> not affiliated with GloriousEggroll, CachyOS or Valve. Please report problems here, not to those projects.
 
-Status: early releases. Builds come from GitHub Actions; DOOMBLADE (Epic, D3D11) is the game tested on a device so far.
+## Install
 
-## How it is put together
+1. Download `DroidDeck-Proton-<version>-aarch64.tar.gz` from [Releases](../../releases).
+2. Extract it into Steam's `compatibilitytools.d` folder.
+3. Restart Steam and pick **DroidDeck-Proton &lt;version&gt;** as the game's compatibility tool.
 
-DroidDeck-Proton is a fork of [proton-ge-custom](https://github.com/GloriousEggroll/proton-ge-custom)
-(its history is kept on the `ge-master` branch). Wine is built in seven tiers, and every tier is a
-tag on the wine branch so it can be bisected or turned off on its own:
+## What's inside
 
-| Tier | What | Where | Tag |
-|---|---|---|---|
-| 1 | Valve Proton wine, `bleeding-edge` (the base Proton Experimental's bleeding-edge builds use) | `ValveSoftware/wine` | `bp-11.7-tier1` |
-| 2 | Everything GE-Proton applies to wine (wine-staging, EM-11 wine-wayland, game fixes, hotfixes, video rework, FSR, Reflex, OptiScaler, DS5, Bluetooth LE ...) | GE's own `protonprep` wine section, run unmodified; wine patches GE adds later come as tier 2 follow-up commits | `bp-11.7-tier2`, follow-ups `bp-11.7-tier2.1` |
-| 3 | CachyOS game fixes that GE does not already carry | `CachyOS/wine-cachyos` | `bp-11.7-tier3` |
-| 4 | Our portable Wine fixes from the Bannerlator layers | `The412Banner/proton-wine` `proton_11.7.1-GE` | `bp-11.7-tier4` |
-| 5 | DroidDeck's esync (eventfd and shared memory sync in wineserver and ntdll) | `Droid-Deck/DroidDeck-Components` `droiddeck-esync` | `bp-11.7-tier5` |
-| 6 | Arihany's SD card fixes: PE images in anonymous memory (noexec mounts) and the drive-root copy fix | `The412Banner/proton-wine` `proton_11.0` | `bp-11.7-tier6` |
-| 7 | Our media fixes: DirectShow video decoders follow the row order the downstream allocator asks for (amstream FMVs no longer upside down) | `The412Banner/proton-wine` `banner-proton/11.7` | `bp-11.7-tier7` |
+DroidDeck-Proton is GE-Proton (DXVK, vkd3d-proton, FEX, protonfixes, media stack and the `proton`
+script, unchanged) with Wine built in seven tiers. Each tier is a tag on the Wine branch, so any one of
+them can be bisected or turned off on its own.
 
-The wine source is [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine) branch
-`banner-proton/11.7`; this repository's `wine` submodule points at it. Everything outside wine
-(DXVK, vkd3d-proton, dxvk-nvapi, d7vk, FEX, protonfixes, lsteamclient, the `proton` script, fonts,
-media stack ...) is GE-Proton's, prepared by GE's own `patches/protonprep-valve-staging.sh`
-(`banner-proton/prep.sh` runs it without its wine section, because tier 2 already contains it).
-The `Verify wine tier 2` workflow re-runs GE's wine section on tier 1 and checks the result is
-exactly tier 2 plus its follow-up commits (`WINE_TIER2_FOLLOWUPS` in `banner-proton/PINS`).
+| Tier | Contents | Tag |
+|---|---|---|
+| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.7-tier1` |
+| 2 | Everything GE-Proton applies to Wine (+ later GE follow-ups) | `bp-11.7-tier2`, `bp-11.7-tier2.1` |
+| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.7-tier3` |
+| 4 | Our portable fixes from the Bannerlator layers | `bp-11.7-tier4` |
+| 5 | DroidDeck esync, built in | `bp-11.7-tier5` |
+| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.7-tier6` |
+| 7 | Media fixes (DirectShow FMVs no longer upside down) | `bp-11.7-tier7` |
 
-### Pins (version 11-7.5)
+Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine), branch
+`banner-proton/11.7` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
 
-| | Commit |
+_Formerly Banner-Proton; releases up to 11-7.2 used the old name._
+
+<details>
+<summary><b>Pins (11-7.5)</b></summary>
+
+| Component | Commit |
 |---|---|
-| GE-Proton (`proton-ge-custom` master, includes everything in GE-Proton11-7 and the work after it) | `8d7a8cd2966e2f3e409f9b0551ec90def7cd2b87` |
-| DXVK (`doitsujin/dxvk` master; GE master still pins `71ec7b5b`, one commit older) | `2c94c5f25cf75c313ef2a55b2e0c9276d67c28d6` |
-| Valve wine `bleeding-edge` (same commit GE master pins) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
-| CachyOS wine, `cachyos_11.0_20261001/main` (wine of proton-cachyos `cachyos-11.0-20261005-slr`) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| DroidDeck-Proton wine, `banner-proton/11.7` | `847635ca0ec7871fa9a3df80283c20dcdc09d572` |
+| GE-Proton (`proton-ge-custom` master, past GE-Proton11-7) | `8d7a8cd2966e2f3e409f9b0551ec90def7cd2b87` |
+| DXVK (`doitsujin/dxvk` master, one past GE's pin) | `2c94c5f25cf75c313ef2a55b2e0c9276d67c28d6` |
+| Valve Wine `bleeding-edge` (same as GE) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
+| CachyOS Wine `cachyos_11.0_20261001/main` | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
+| DroidDeck-Proton Wine `banner-proton/11.7` | `847635ca0ec7871fa9a3df80283c20dcdc09d572` |
 
-The machine-readable list is `banner-proton/PINS`; the version is `banner-proton/VERSION`.
+</details>
 
-## Patch list
+<details>
+<summary><b>Tier 2 – GE-Proton</b></summary>
 
-### Tier 2: GE-Proton
+All of GE-Proton's Wine patching at `proton-ge-custom` `49c50f4b`, applied by GE's own `protonprep`
+Wine section, one commit per section: configure revert, EM-11 wine-wayland + wineopenxr + EM fixups,
+wine-staging (with GE's exclusions and rebased sets), game patches, hotfixes, pending upstream patches
+and GE's custom patches (FSR, Reflex, OptiScaler, video rework, DS5 haptics, Bluetooth LE, …). Everything
+applied cleanly. The `Verify wine tier 2` workflow re-runs GE's section on tier 1 and checks the result
+matches tier 2 plus its follow-ups.
 
-All of GE-Proton's wine patching at `proton-ge-custom` `49c50f4b`, applied by GE's script section by
-section (one commit per section): the configure revert, EM-11 wine-wayland + wineopenxr + wineland child
-rendering + EM fixups, wine-staging (`patchinstall.py --all` with GE's exclusions plus GE's rebased
-staging sets), GE game patches, hotfixes and backports, pending upstream patches, and GE's custom patches
-(FSR fullscreen hack, NVIDIA Reflex, OptiScaler, GE video rework, proton-ds5-haptic, Bluetooth LE, ...).
-Every patch applied cleanly; nothing was skipped. See GE's script for the full list and its credits.
+**Follow-ups** (committed on top; tier tags are never rewritten):
 
-Tier 2 follow-ups: wine patches GE added after `49c50f4b`, committed on top of the wine branch (the
-tier commits and tags are never rewritten) and tagged in order:
+- `bp-11.7-tier2.1` (GE `8d7a8cd2`): `em-fixups/0067` winewayland keeps renderer subsurfaces when
+  minimized (Guild Wars Reforged alt+tab).
 
-- `bp-11.7-tier2.1` (GE `8d7a8cd2`): `em-fixups/0067-winewayland-preserve-renderer-subsurfaces-when-minimized.patch`
-  (GE `ad73744b`, Guild Wars Reforged alt+tab from fullscreen), applied unmodified. Only
-  `winewayland.drv` changes, which no later tier touches.
+GE's non-Wine changes arrive through the `ge-master` merge: the Wine-Mono FNA stencil fix (Meridian:
+New World) and the protonfixes bump (Project Torque).
 
-GE's other changes up to `8d7a8cd2` are outside wine and come in through the `ge-master` merge, built the
-way GE builds them: the FNA stencil-reference patches for Wine-Mono (`patches/wine-mono/fna/`, applied by
-GE's `prepare.sh`; the build replaces `WineMono.FNA.dll`, Meridian: New World rendering, GE `fcd74c74`) and
-the protonfixes bump with the Project Torque fix (GE `8d7a8cd2`).
+</details>
 
-### Tier 3: CachyOS
+<details>
+<summary><b>Tier 3 – CachyOS</b></summary>
 
-Cherry-picked (with `-x`) from CachyOS wine `2ce6b44c`, in this order:
+Cherry-picked (`-x`) from CachyOS Wine `2ce6b44c`:
 
-- HACK: ntdll: Add `WINE_DISABLE_SFN` option, fixes Yakuza 5 cutscenes (Pedro Nishiyama)
-- HACK: win32u: Force opaque webviews for Wuthering Waves (NelloKudo)
-- pdh: Avoid access violation in PdhCloseQuery on bad handle (Ziia Shi)
-- powrprof: Stub PowerReadACValueIndex (Ziia Shi)
-- ntdll: Add SystemPowerInformation semi-stub (Etaash Mathamsetty)
-- ntdll: Implement RtlAreLongPathsEnabled (Etaash Mathamsetty)
-- include: Update STORAGE_BUS_TYPE in ntddstor.h; mountmgr.sys: Stub StorageDeviceTrimProperty query (Jactry Zeng)
-- d3d8: Build a valid box in vertex/index buffer Lock (Stefan Dösinger, 2 patches)
-- ddraw: Enumerate the ramp device (Elizabeth Figura); ddraw: Pass the active device to material_activate (Rémi Bernon)
-- wined3d: Remove the "iPixelFormat" field (Elizabeth Figura); Reset internal_format_set when using the backup DC (Zhiyi Zhang); Access the right pixel format in swapchain_gl_present() (Patrick Zacharias, applied by hand at the moved call site)
-- HACK: xaudio2_7: Workaround a crash in Darksiders: Warmastered Edition (NelloKudo; rebased onto GE's DS5 audio tracing, NULL buffer kept valid)
-- mfplat: Handle R8_UINT format in MFCreateDXGISurfaceBuffer() (Nikolay Sivov; library part only)
+- ntdll: `WINE_DISABLE_SFN` option (Yakuza 5 cutscenes) – Pedro Nishiyama
+- win32u: opaque webviews for Wuthering Waves – NelloKudo
+- pdh: no access violation in PdhCloseQuery on a bad handle; powrprof: stub PowerReadACValueIndex – Ziia Shi
+- ntdll: SystemPowerInformation semi-stub, RtlAreLongPathsEnabled – Etaash Mathamsetty
+- mountmgr.sys: StorageDeviceTrimProperty stub – Jactry Zeng
+- d3d8: valid box in vertex/index buffer Lock – Stefan Dösinger
+- ddraw: enumerate the ramp device; pass the active device to material_activate – Elizabeth Figura, Rémi Bernon
+- wined3d: pixel-format fixes – Elizabeth Figura, Zhiyi Zhang, Patrick Zacharias
+- xaudio2_7: Darksiders Warmastered crash workaround – NelloKudo
+- mfplat: R8_UINT in MFCreateDXGISurfaceBuffer – Nikolay Sivov
 
-Already in GE-Proton or Valve wine in some form, so not picked again: the EM wine-wayland, ntoskrnl,
-amdxc/atiadlxx/atidxx and winebus/Steam Input work (Etaash Mathamsetty), the GE-origin hacks CachyOS
-carries (FSR, Reflex, OptiScaler, host block, PSO2, Vanguard, Guilty Gear, Assetto Corsa, RRF flags,
-winealsa channels), AF_UNIX sockets, icuuc/icuin, keyboard layouts, NCryptDecrypt, OLE clipboard,
-the Monster Hunter Wilds audio set, the RDR2/WRC9/Diabotical wine.inf entries, NelloKudo's
-mfsrcsnk/mfreadwrite/WMA/winedmo/evr media fixes, NtUserEnableMouseInPointer, RegCreateKeyTransacted,
-ControlServiceEx, IsNativeVhdBoot, top-down reservation, drive_c case folding.
+**Not picked:** anything GE or Valve Wine already carries; x86_64-only code (EAC/EOS syscall
+forwarding); changes that conflict with GE's winedmo video rework; branding/policy defaults (fsync on,
+Windows 11, version string, font smoothing); larger features left for later (winepipewire, futex
+tuning, FSR4/MLFG, kernel-object series, LTO/clang).
 
-Deliberately left out:
+</details>
 
-- Not applicable to an aarch64 build: EAC/EOS syscall forwarding (x86_64 `signal_x86_64.c` only).
-- Conflict with GE's own design: the winegstreamer force/orientation switches, media-converter
-  reverts, raw parser and WM reader stream patches (GE's video rework replaced that code with winedmo).
-- Policy/branding, not game fixes: fsync on by default, Windows 11 by default, "(CachyOS)" version
-  string, font smoothing defaults, dotfiles shown.
-- Features rather than game fixes, left for later: the winepipewire.drv audio driver and system-thread
-  mmdevapi rework (M0n7y5, Alexandre Julliard), futex queue tuning (Marc-Aurel Zent), epoll_wait
-  resolution, AMD FSR4/MLFG (amdxc), d2d1/windowscodecs/dnsapi upstream backports, the ntoskrnl/wdfldr
-  kernel-object series, LTO/clang build changes.
+<details>
+<summary><b>Tier 4 – Our fixes (Bannerlator layer v14)</b></summary>
 
-### Tier 4: ours (from `proton_11.7.1-GE`, Bannerlator layer v14)
+- `WINE_FORCE_SSBS` switch on top of Wine MR 12262 (`=0` restores the old behaviour)
+- `WINEVMEMMAXSIZE` (MB): cap a single NtAllocateVirtualMemory (inert when unset)
+- ntdll: bounds-check `RtlIsEcCode` (Denuvo unwinding loop, Need for Speed Heat)
+- mf/topology_loader: restore the upstream type when optional insertion fails – NelloKudo
+- sharedgpures.sys: earlier shared-resource protocol (D3D9→D3D11 video on DXVK < 3.0)
+- rsaenh: hold the public key during CPVerifySignature
+- gdiplus: clamp degenerate spans instead of asserting (EA app installer)
+- xinput: survive a transient WAIT_FAILED in the update thread
+- win32u: MAX_FONT_HANDLES 5000 → 32768
+- GE game fix `dai_xinput` (Dragon Age: Inquisition controller, SteamGameId 1222690 only)
 
-- `WINE_FORCE_SSBS`: Valve wine already contains Wine MR 12262 (keep the host SSBS bit, ignore reserved
-  CPSR bits); we add only the switch. `WINE_FORCE_SSBS=0` gives the pre-MR behaviour back.
-- `WINEVMEMMAXSIZE` (MB): cap a single NtAllocateVirtualMemory size (inert when unset).
-- ntdll: bounds-check `RtlIsEcCode` (nested access-violation loop unwinding Denuvo frames, Need for Speed Heat).
-- mf/topology_loader: restore the upstream media type when optional insertion fails (NelloKudo).
-- sharedgpures.sys: the earlier shared-resource protocol on D3DKMT sharing (D3D9 to D3D11 video on DXVK before 3.0).
-- rsaenh: hold the public key for the duration of CPVerifySignature.
-- gdiplus: clamp degenerate spans instead of asserting (EA app installer).
-- xinput: survive a transient WAIT_FAILED in the update thread.
-- win32u: MAX_FONT_HANDLES 5000 to 32768.
-- GE game fix `dai_xinput` (Dragon Age: Inquisition controller, Cameron Moore; SteamGameId 1222690 only).
+**Not carried:** winegstreamer and media fixes that GE's winedmo rework replaces or already covers,
+fixes Valve Wine already has, and everything Android/bionic-specific.
 
-Not carried, with the reason:
+</details>
 
-- NelloKudo's winegstreamer WMA decoder, output-PTS and media-source retry fixes, and our two
-  winegstreamer duration fixes: GE's video rework removes those winegstreamer files; GE ships its own
-  winedmo WMA decoder and timing.
-- mfsrcsnk SetCurrentPosition seek, mfreadwrite ANY_STREAM / audio alignment / native compressed
-  formats / async SAMPLE_READY timestamp, and the winedmo extension-less URL fix: GE's reworked
-  mfsrcsnk, mfreadwrite and winedmo already do the same thing.
-- "keep winegstreamer the default byte-stream handler, winedmo opt-in": GE's design is winedmo-only.
-- winedmo big-endian PCM rewrite: it only replaced a filter that did not compile against Termux's
-  FFmpeg 8; GE's pinned FFmpeg builds the original.
-- The media-converter environment gates: GE removed them on purpose.
-- rsaenh HMAC inner-hash crash: Valve wine already fixes it.
-- Everything Android specific (bionic patches, sysvshm, shm_utils, 16 KB alignment), lsteamclient
-  server browser, userspace ntsync, DirectAudio, winewayland touch/HDR and the XP theme.
-
-### Tier 5: DroidDeck esync
+<details>
+<summary><b>Tier 5 – DroidDeck esync</b></summary>
 
 `droiddeck-esync/patches/valve-11/0001-droiddeck-esync.patch` from
-[Droid-Deck/DroidDeck-Components](https://github.com/Droid-Deck/DroidDeck-Components) at `780ab619de`
-(maxjivi05), applied unchanged with `--fuzz=0` (line offsets only). It adds eventfd and shared memory
-sync to wineserver and the unix side of ntdll, following Elizabeth Figura's esync design, so DroidDeck
-needs no separate esync pack for DroidDeck-Proton. wineserver still picks `/dev/ntsync`, then fsync, then
-esync (`WINEESYNC` nonzero), then server-side sync, and reports `droiddeck-esync: up and running.` when
-it runs esync. The patch changes no wineserver request and no ntdll.so export; CI checks both (the
-protocol headers against tier 4, and the exports against the release given as `compare_with`).
+[Droid-Deck/DroidDeck-Components](https://github.com/Droid-Deck/DroidDeck-Components) `780ab619de`
+(maxjivi05), applied unchanged. Adds eventfd/shared-memory sync to wineserver and ntdll (Elizabeth
+Figura's esync design), so no separate esync pack is needed. Sync order stays ntsync → fsync → esync
+(`WINEESYNC`) → server; the log says `droiddeck-esync: up and running.` when esync is used. No wineserver
+request or ntdll.so export changes (CI checks both).
 
-### Tier 6: SD card fixes (Arihany)
+</details>
 
-From our Wine 11 port in [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine)
-`proton_11.0` (`497c384f`, `android/patches/`), applied with line offsets only. One trace line was added
-to each fix so CI can check for it in the binaries.
+<details>
+<summary><b>Tier 6 – SD card fixes (Arihany)</b></summary>
 
-- **ntdll: PE images in anonymous memory** (`dlls/ntdll/unix/virtual.c`). Originally GameNative's
-  (`proton_10.0_mprotect`), carried in Arihany's Proton 11 builds. `map_file_into_view`, `map_pe_header`
-  and `map_image_into_view` take a `force_anon` flag; `virtual_map_image` sets it, so a private image
-  mapping is read with `pread` into anonymous memory instead of being `mmap`ed from the file. Games on a
-  `noexec` mount (an SD card on Android: exFAT behind fuse) then start instead of failing with
-  "failed to set ... protection ... noexec filesystem?". Shared sections and `NtMapViewOfSection` still
-  map the file.
-- **shell32: copying to or from a drive root** (`dlls/shell32/shlfileop.c`, Arihany). `file_entry_init`
-  keeps the backslash of a bare root (`D:\`) and never leaves the directory or file name unset, so an
-  `SHFileOperation` copy between two drive roots no longer crashes.
+From our Wine 11 port (`proton-wine` `proton_11.0`, `497c384f`), offsets only:
 
-Not taken: Arihany's `LC_ALL=C.UTF-8` default, which is for Android's bionic libc (DroidDeck runs glibc).
+- **ntdll – PE images in anonymous memory** (`virtual.c`; originally GameNative's). Private image
+  mappings are read into anonymous memory instead of `mmap`ed, so games on a `noexec` mount (an Android
+  SD card) start instead of failing with "noexec filesystem?".
+- **shell32 – drive-root copies** (`shlfileop.c`). A bare root like `D:\` keeps its backslash, so
+  `SHFileOperation` copies between drive roots no longer crash.
 
-CI guards (a build without the fixes fails): the `Wine protocol unchanged` job checks the fix code in
-the wine source, and `Verify tarball` looks for each fix's trace string in `ntdll.so` and in every
-`shell32.dll`.
+Not taken: the `LC_ALL=C.UTF-8` default (bionic-only; DroidDeck uses glibc).
 
-### Tier 7: media fixes
+</details>
 
-- **winedmo: DirectShow transforms follow the allocator's row order** (`dlls/winedmo/quartz_transform.c`).
-  amstream's DirectDraw stream (`IAMMultiMediaStream` / `IDirectDrawStreamSample::Update`) connects to a
-  video decoder with a bottom-up RGB type, but its allocator's samples are locked DirectDraw surfaces,
-  which are top-down; it says so with a negative `biHeight` from the sample's `GetMediaType()`. quartz's
-  AVI decompressor and upstream winegstreamer honor that; the winedmo transform from GE's video rework
-  did not, so RGB24/RGB32 MPEG-1 FMVs played through amstream (Toy Story 2) showed upside down. The
-  transform now checks each output sample's media type and switches the winedmo output's row order
-  (`winedmo_transform_set_output_format`) when an RGB sample asks for it; allocators that report no type
-  (the default allocator, the video renderers) see no change. GE fixed the same thing for qasf only
-  (`ge-video-rework/0026`).
+<details>
+<summary><b>Tier 7 – Media fixes</b></summary>
 
-CI guards: the `Wine protocol unchanged` job checks the fix code in the wine source, and `Verify tarball`
-looks for its trace string in every `winedmo.dll`.
+- **winedmo – DirectShow transforms follow the allocator's row order** (`quartz_transform.c`).
+  amstream's DirectDraw stream connects with bottom-up RGB but hands out top-down surfaces, signalled by
+  a negative `biHeight` on each sample. GE's winedmo transform ignored that, so MPEG-1 FMVs played
+  through amstream (e.g. Toy Story 2) were upside down. It now follows the sample's row order; allocators
+  that report no type are unaffected. (GE fixed the same issue for qasf only.)
 
-## Building
+</details>
 
-All builds run on GitHub Actions, on native ARM64 runners (`ubuntu-24.04-arm`) inside Valve's
-`steamrt4` arm64 Proton SDK image, like GE's aarch64 builds:
+<details>
+<summary><b>Building</b></summary>
 
-- `Build DroidDeck-Proton (aarch64)` (`.github/workflows/build-aarch64.yml`): GE's `configure.sh
-  --target-arch=arm64`, with the Proton make split into parallel jobs (`_group.yml`,
-  `banner-proton/ci.sh`): graphics (DXVK, d7vk, dxvk-nvapi, dxvk-igdext, vkd3d-proton, Vulkan layers),
-  FEX, misc (wine-mono runtime, fonts, protonfixes, xrandr) and media (FFmpeg, dav1d, xz, bzip2, speech,
-  libxml2, ...) run side by side; wine (then vkd3d, lsteamclient, steam.exe, vrclient, umu) follows
-  media, in up to three chained stages if one runner's time runs out; assemble runs the remaining
-  `make dist`. Then everything is stripped
-  (`strip --strip-unneeded` for ELF, `llvm-strip --strip-unneeded` for PE, no debug files; Wine-Mono's
-  separate `.dbg`/`.pdb` debug-symbol files are deleted, about 40 MB) and packed as
-  `DroidDeck-Proton-<version>-aarch64.tar.gz` plus `.sha512sum`, with the same layout as GE's tarball
-  (`toolmanifest.vdf`, `compatibilitytool.vdf`, `proton`, `files/`). The tarball's top folder is
-  `DroidDeck-Proton <version>` (DroidDeck shows a tool by its folder name), the tool's internal name
-  is `DroidDeck-Proton-<version>` and the `version` file reads `<timestamp> DroidDeck-Proton-<version>`.
-  CI fails if any of these, or the asset names and FFmpeg's version string, still say Banner-Proton.
-  With "publish" (on main) it becomes the latest release; "compare_with" compares the tarball with an
-  earlier release.
-- Caches: each group's output, keyed by its sources (a group with a cached output is skipped), one
-  ccache per group for the native and the llvm-mingw cross compilers, and the SDK image. Older
-  entries of a group are deleted when a new one is saved.
+Builds run on GitHub Actions (`ubuntu-24.04-arm`, Valve's `steamrt4` arm64 Proton SDK), like GE's
+aarch64 builds.
 
-Local builds follow GE's instructions in [docs/README.GE-Proton.md](docs/README.GE-Proton.md), with
-`banner-proton/prep.sh` instead of `patches/protonprep-valve-staging.sh` and
+- **`Build DroidDeck-Proton (aarch64)`** – GE's `configure.sh --target-arch=arm64`, split into parallel
+  groups (graphics, FEX, misc, media → Wine, then assemble). Output is stripped (Wine-Mono debug files
+  removed) and packed as `DroidDeck-Proton-<version>-aarch64.tar.gz` + `.sha512sum` in GE's layout.
+  Inputs: **publish** (release from main), **prerelease** (not marked latest), **compare_with** (diff
+  against an earlier release).
+- **Caches** – each group's output is keyed by its sources and skipped when cached; per-group ccache;
+  SDK image cache.
+- **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 and 7 fixes present in source and
+  binaries (trace strings); no leftover "Banner-Proton" names.
+
+Local builds: follow [docs/README.GE-Proton.md](docs/README.GE-Proton.md), using `banner-proton/prep.sh`
+instead of `patches/protonprep-valve-staging.sh` and
 `../configure.sh --target-arch=arm64 --build-name=DroidDeck-Proton-<version> --display-name="DroidDeck-Proton <version>"`.
+
+</details>
 
 ## Credits
 
-- [Valve](https://github.com/ValveSoftware/Proton) for Proton and its wine, and the Steam Linux Runtime SDK.
-- [GloriousEggroll](https://github.com/GloriousEggroll/proton-ge-custom) and the GE-Proton contributors for GE-Proton and its patch set.
-- The [Wine](https://gitlab.winehq.org/wine/wine) and [wine-staging](https://gitlab.winehq.org/wine/wine-staging) developers.
-- [CachyOS](https://github.com/CachyOS/proton-cachyos) for proton-cachyos and wine-cachyos.
-- NelloKudo (Nello De Gregoris) for the media and game fixes, Etaash Mathamsetty for the EM work,
-  and every patch author named above and in the commit history.
-- Elizabeth Figura for esync, fsync and ntsync, and maxjivi05 / DroidDeck for droiddeck-esync.
-- Arihany for the SD card and drive-root copy fixes, and GameNative for the original anonymous image mapping change.
-- FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and the other projects bundled by GE-Proton.
+[Valve](https://github.com/ValveSoftware/Proton) (Proton, Wine, Steam Linux Runtime) ·
+[GloriousEggroll](https://github.com/GloriousEggroll/proton-ge-custom) and GE-Proton contributors ·
+[Wine](https://gitlab.winehq.org/wine/wine) and [wine-staging](https://gitlab.winehq.org/wine/wine-staging) developers ·
+[CachyOS](https://github.com/CachyOS/proton-cachyos) · NelloKudo · Etaash Mathamsetty ·
+Elizabeth Figura (esync, fsync, ntsync) · maxjivi05 / DroidDeck (droiddeck-esync) ·
+Arihany and GameNative (SD card fixes) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
+patch author named in the commit history.
 
 ## License
 
-Proton and its components are distributed under their own licenses; see [LICENSE](LICENSE),
-[LICENSE.proton](LICENSE.proton) and `dist.LICENSE` (shipped in the tarball). Wine is LGPL-2.1-or-later.
-DroidDeck-Proton's own scripts and patches use the same licenses as the files they change.
+Proton and its components keep their own licenses: see [LICENSE](LICENSE), [LICENSE.proton](LICENSE.proton)
+and `dist.LICENSE` in the tarball. Wine is LGPL-2.1-or-later. DroidDeck-Proton's own scripts and patches
+follow the licenses of the files they change.
