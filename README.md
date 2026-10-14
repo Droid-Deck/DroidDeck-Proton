@@ -22,49 +22,55 @@ them can be bisected or turned off on its own.
 
 | Tier | Contents | Tag |
 |---|---|---|
-| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.7-tier1` |
-| 2 | Everything GE-Proton applies to Wine (+ later GE follow-ups) | `bp-11.7-tier2`, `bp-11.7-tier2.1` |
-| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.7-tier3` |
-| 4 | Our portable fixes from the Bannerlator layers | `bp-11.7-tier4` |
-| 5 | DroidDeck esync, built in | `bp-11.7-tier5` |
-| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.7-tier6` |
-| 7 | Media fixes (DirectShow FMVs no longer upside down) | `bp-11.7-tier7` |
+| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.9-tier1` |
+| 2 | Everything GE-Proton11-9 applies to Wine | `bp-11.9-tier2` |
+| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.9-tier3` |
+| 4 | Our portable fixes from the Bannerlator layers | `bp-11.9-tier4` |
+| 5 | DroidDeck esync, built in | `bp-11.9-tier5` |
+| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.9-tier6` |
+| 7 | Media fixes (DirectShow FMVs no longer upside down) | `bp-11.9-tier7` |
 
 Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine), branch
-`banner-proton/11.7` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
+`banner-proton/11.9` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
 
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-7.5)</b></summary>
+<summary><b>Pins (11-9.1)</b></summary>
 
 | Component | Commit |
 |---|---|
-| GE-Proton (`proton-ge-custom` master, past GE-Proton11-7) | `8d7a8cd2966e2f3e409f9b0551ec90def7cd2b87` |
+| GE-Proton (`proton-ge-custom` tag `GE-Proton11-9`) | `01bfbf67b35418fdd705f2be09e0bfb43eece24b` |
 | DXVK (`doitsujin/dxvk` master, one past GE's pin) | `2c94c5f25cf75c313ef2a55b2e0c9276d67c28d6` |
 | Valve Wine `bleeding-edge` (same as GE) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
-| CachyOS Wine `cachyos_11.0_20261001/main` | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| DroidDeck-Proton Wine `banner-proton/11.7` | `847635ca0ec7871fa9a3df80283c20dcdc09d572` |
+| FEX (same as GE: release `FEX-2610`) | `14c92681f4d62cf84d901460e0358de09c8847a7` |
+| CachyOS Wine `cachyos_11.0_20261001/main` (release `cachyos-11.0-20261005-slr`, still the latest) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
+| DroidDeck-Proton Wine `banner-proton/11.9` | `e72ecf5d2f2906fe4e690c1be48abd96683e1a07` |
+
+vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
+GE-Proton11-9's pins.
 
 </details>
 
 <details>
 <summary><b>Tier 2 – GE-Proton</b></summary>
 
-All of GE-Proton's Wine patching at `proton-ge-custom` `49c50f4b`, applied by GE's own `protonprep`
-Wine section, one commit per section: configure revert, EM-11 wine-wayland + wineopenxr + EM fixups,
+All of GE-Proton's Wine patching at `GE-Proton11-9` (`01bfbf67`), applied by GE's own `protonprep`
+Wine section on tier 1, one commit per section: configure revert, EM-11 wine-wayland + wineopenxr + EM fixups,
 wine-staging (with GE's exclusions and rebased sets), game patches, hotfixes, pending upstream patches
 and GE's custom patches (FSR, Reflex, OptiScaler, video rework, DS5 haptics, Bluetooth LE, …). Everything
 applied cleanly. The `Verify wine tier 2` workflow re-runs GE's section on tier 1 and checks the result
 matches tier 2 plus its follow-ups.
 
-**Follow-ups** (committed on top; tier tags are never rewritten):
+New in GE-Proton11-8/11-9 compared with the 11.7 branch: schannel incomplete-TLS-record size fix,
+xwayland-satellite minimization and off-desktop minimized paint fixes, winewayland windows stay
+recoverable without minimize support, HDR auto-detection (`em-fixups/0069`, `0070`), winedmo seek flush
+and Crimson Desert's video loop fix (`ge-video-rework/0091`, `0092`), DualSense endpoint properties
+(`proton-ds5-haptic/0207`), and wine-staging's `ntdll-Serial_Port_Detection` left out. The 11.7 branch's
+follow-up `bp-11.7-tier2.1` (`em-fixups/0067`, Guild Wars Reforged alt+tab) is part of tier 2 now.
 
-- `bp-11.7-tier2.1` (GE `8d7a8cd2`): `em-fixups/0067` winewayland keeps renderer subsurfaces when
-  minimized (Guild Wars Reforged alt+tab).
-
-GE's non-Wine changes arrive through the `ge-master` merge: the Wine-Mono FNA stencil fix (Meridian:
-New World) and the protonfixes bump (Project Torque).
+GE's non-Wine changes arrive through the `ge-master` merge: the DXVK HDR auto-detection and StarCraft II
+patches, a Wine-Mono delegate-cache fix and the `proton` script's HDR defaults.
 
 </details>
 

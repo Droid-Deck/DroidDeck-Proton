@@ -2,6 +2,19 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-10-14
+
+### 11-9.1: rebased on GE-Proton11-9 (artifacts only, no release)
+- **Base:** `ge-master` fast-forwarded `8d7a8cd2` → GE-Proton11-9 `01bfbf67` and merged into main. GE-Proton11-9 pins the same Valve Wine (`981e2f0b`), DXVK, vkd3d-proton, vkd3d, FEX (`FEX-2610`), lsteamclient, wineopenxr and protonfixes as `8d7a8cd2`: the component updates GE lists for 11-8 were already in our build. The real change is GE's patch set.
+- **Wine:** new branch `banner-proton/11.9` (`e72ecf5d`), tags `bp-11.9-tier1..7`:
+  - Tier 2: GE-Proton11-9's wine section run unmodified on Valve `981e2f0b`, no failed patches, one commit per section.
+  - Tier 2.1 (`em-fixups/0067`) is now part of tier 2: the same patch file, applied by GE's em-fixups loop. No `tier2.1` tag on 11.9.
+  - Tiers 3–7 cherry-picked from `banner-proton/11.7` with no conflicts; each tier's change is line-for-line the same as on 11.7.
+  - The wineserver protocol is unchanged (new tier 4 `b1b17f2e` has the same headers as 11.7's).
+  - The whole branch differs from `banner-proton/11.7` only in the 22 files GE changed.
+- **Checked:** CachyOS has no release newer than `cachyos-11.0-20261005-slr`, so tier 3 stays at 17 commits. FEX stays at `14c92681` (the `FEX-2610` tag, GE's pin). DXVK stays at `2c94c5f2`; GE's two new DXVK patches apply to it with offsets only.
+- **11-7.6** (FEX version name, no `xalia.pdb`) was never released. Its fixes carry over into 11-9.1.
+
 ## 2026-10-11
 
 ### In DroidDeck: third Proton source (DroidDeck #588, merged `78fcb60`)
@@ -56,7 +69,6 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 
 ## Open items
 - **SD-card fix (tier 6):** device test owed. Run a game from DroidDeck's SD-card "Second library" with `WINEDEBUG=+virtual` and look for `force_anon: reading` and no "noexec filesystem?".
-- **Next build:** fetch FEX tags so FEX reports its version; strip `files/share/xalia/xalia.pdb` (1.4 MB).
 - **Parked:**
   - `.tar.xz` packing (about 640 → 370 MB download)
   - CachyOS extras: low-latency DXVK/VKD3D, DXVK-Sarek with Armada's probe tweak, small script options; GStreamer only if needed
