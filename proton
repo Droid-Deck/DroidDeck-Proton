@@ -47,7 +47,7 @@ import protonfixes
 #and edit it if needed.
 import utilities
 
-CURRENT_PREFIX_VERSION="GE-Proton11-7"
+CURRENT_PREFIX_VERSION="GE-Proton11-9"
 
 PFX="Proton: "
 ld_path_var = "LD_LIBRARY_PATH"
@@ -2318,6 +2318,8 @@ class Session:
         self.check_environment("PROTON_USE_OPTISCALER", "optiscaler")
 
         self.check_environment("PROTON_NATIVE_AGS", "nativeags")
+        # Legacy overrides only; HDR detection no longer requires either flag.
+        # Preserve PROTON_USE_HDR precedence when both aliases are set.
         self.check_environment("PROTON_ENABLE_HDR", "hdr")
         self.check_environment("PROTON_USE_HDR", "hdr")
         self.check_environment("PROTON_NO_NTSYNC", "nontsync")
@@ -2564,8 +2566,14 @@ class Session:
             if "SDL_GAMECONTROLLER_IGNORE_DEVICES" in self.env:
                 del self.env["SDL_GAMECONTROLLER_IGNORE_DEVICES"]
 
+        # Leave DXVK_HDR unset by default: shared DXGI detects HDR for DX11/DX12
+        # from Wine Wayland output state or Gamescope XWayland feedback.
+        # Retain legacy opt-ins/opt-outs without changing the display driver.
         if "hdr" in self.compat_config:
             self.env["DXVK_HDR"] = "1"
+        elif "PROTON_ENABLE_HDR" in self.env or "PROTON_USE_HDR" in self.env:
+            self.env["DXVK_HDR"] = "0"
+            self.env["DXVK_NO_HDR"] = "1"
 
         if "fnad3d11" in self.compat_config and "FNA3D_FORCE_DRIVER" not in self.env:
             self.env["FNA3D_FORCE_DRIVER"] = "D3D11"

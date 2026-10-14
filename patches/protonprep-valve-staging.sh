@@ -35,6 +35,10 @@ apply_all_in_dir() {
     # Swapchain colorspace instance-extension support is upstream in DXVK 3c40ca1b.
     # Do not advertise HDR when Wine reports an SDR output, even with DXVK_HDR=1.
     apply_patch "../patches/dxvk/dxgi-respect-output-hdr-state.patch"
+    # Query the active output by default instead of requiring an HDR opt-in.
+    apply_patch "../patches/dxvk/dxgi-auto-detect-hdr.patch"
+    # StarCraft II: avoid GPU hangs with D3D9 constant buffer streaming (#790).
+    apply_patch "../patches/dxvk/starcraft2-disable-constant-buffer-streaming.patch"
     popd
 
     pushd vkd3d-proton
@@ -151,6 +155,7 @@ apply_all_in_dir() {
     -W dbghelp-Debug_Symbols \
     -W version-VerQueryValue \
     -W mf_http_support \
+    -W ntdll-Serial_Port_Detection \
     -W server-PeekMessage \
     -W msxml3-FreeThreadedXMLHTTP60 \
     -W ntdll-ForceBottomUpAlloc \
@@ -185,6 +190,10 @@ apply_all_in_dir() {
     # dbghelp-Debug_Symbols - Ubisoft Connect games (3/3 I had installed and could test) will crash inside pe_load_debug_info function with this enabled
     # version-VerQueryValue - just a test and doesn't apply cleanly. not relevant for gaming
     # mf_http_support - disabled in favor of custom ffmpeg backend video playback solution
+    # ntdll-Serial_Port_Detection - its mountmgr probe opens every /dev/ttyS*, ttyUSB*, ttyACM* without O_NOCTTY
+    #   from winedevice.exe (a session leader without a terminal): the first one becomes its controlling tty and
+    #   is hung up when the prefix shuts down, breaking the program that had it open (e.g. a Sinden lightgun's
+    #   serial link to its driver: the gun stops working after each game)
 
     # server-PeekMessage - already applied
     # msxml3-FreeThreadedXMLHTTP60 - already applied
@@ -366,6 +375,9 @@ apply_all_in_dir() {
     echo "WINE: -HOTFIX- Fall back when GnuTLS lacks NO_SHUFFLE_EXTENSIONS"
     apply_patch "../patches/wine-hotfixes/pending/secur32-fallback-without-no-shuffle-extensions.patch"
 
+    echo "WINE: -HOTFIX- Backport schannel SECBUFFER_MISSING size fix for incomplete TLS records (upstream 9aee0e71, 35b1e7eb)"
+    apply_patch "../patches/wine-hotfixes/pending/secur32-schannel-fix-incomplete-message-missing-size.patch"
+
     echo "WINE: -HOTFIX- Preserve driver-reported OpenGL GPU identity"
     apply_patch "../patches/wine-hotfixes/pending/wined3d-preserve-runtime-opengl-gpu-description.patch"
 
@@ -374,6 +386,12 @@ apply_all_in_dir() {
 
     echo "WINE: -HOTFIX- Keep Forza background windows unmapped on wlroots"
     apply_patch "../patches/wine-hotfixes/pending/winex11-keep-forza-background-windows-unmapped-on-wlroots.patch"
+
+    echo "WINE: -HOTFIX- Reconcile unsupported minimization on xwayland-satellite"
+    apply_patch "../patches/wine-hotfixes/pending/winex11-handle-unsupported-minimization-on-satellite.patch"
+
+    echo "WINE: -HOTFIX- Do not paint off-desktop minimized frames into retained host windows"
+    apply_patch "../patches/wine-hotfixes/pending/server-clip-off-desktop-minimized-window-paint.patch"
 
     echo "WINE: -HOTFIX- Share selected cursor images across processes"
     apply_patch "../patches/wine-hotfixes/pending/win32u-share-selected-cursors-across-processes.patch"

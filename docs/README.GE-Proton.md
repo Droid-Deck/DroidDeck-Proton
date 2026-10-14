@@ -473,24 +473,45 @@ The build will be placed within the build directory as SOME-BUILD-NAME-HERE.tar.
 ## Options
 
 
-###### Enable HDR
+<a id="enable-hdr"></a>
 
-It should work if you have:
+###### HDR
 
-- A compositor with HDR support
-- A game with HDR support.
-- A monitor with HDR support.
+HDR is detected automatically; `PROTON_ENABLE_HDR=1` and `PROTON_USE_HDR=1`
+are no longer required. The game, monitor, compositor, and Vulkan presentation
+path must support HDR, and HDR must be enabled in the desktop or Gamescope.
+
+This covers DX11 through DXVK and DX12 through VKD3D-Proton: both use the
+DXVK-provided DXGI for output queries, with their respective Vulkan presenters
+checking HDR surface support.
+
+- Native Wine Wayland uses the compositor's per-output color-management state.
+  Select that driver with `PROTON_ENABLE_WAYLAND=1` when using a native Wayland
+  desktop outside Gamescope.
+- Gamescope's XWayland path uses its HDR output feedback. Ordinary X11/XWayland
+  paths without HDR feedback default to SDR; this does not add HDR support to them.
+- SDR outputs remain SDR, including when other connected monitors use HDR.
+
+For native Wine Wayland without Gamescope, use:
 
 ```bash
-PROTON_ENABLE_HDR=1 %command%
+PROTON_ENABLE_WAYLAND=1 %command%
 ```
 
+Remove `PROTON_ENABLE_HDR=1`, `PROTON_USE_HDR=1`, and `DXVK_HDR=1` from the
+game's launch options to use automatic detection. This applies to both DX11
+and DX12. When using Gamescope, keep its HDR configuration and use Wine's
+default XWayland driver instead of adding the Wayland option above.
+
+Use `DXVK_NO_HDR=1 %command%` to disable HDR reporting. The old Proton HDR
+options are still accepted for compatibility; setting either to `0` disables
+HDR (if both are set, `PROTON_USE_HDR` takes precedence). Explicit HDR opt-in
+is retained for older X11 HDR WSI implementations without output feedback.
+
 > [!NOTE]
-> Setting PROTON_ENABLE_HDR=1 does NOT enable the  Wine Wayland driver. Gamescope
-> can use PROTON_ENABLE_HDR, and automatically enabling native Wine Wayland
-> here would break that path. For HDR outside of gamescope, enable PROTON_ENABLE_HDR=1 
-> AND PROTON_ENABLE_WAYLAND=1 together only when using a native wayland desktop and
-> not using gamescope.
+> Automatic detection does not change your desktop's HDR setting, select Wine
+> Wayland automatically, or force the game's own HDR setting on. Gamescope's
+> HDR mode and WSI support still need to be configured normally.
 
 ##### Enabling NTSync
 For NTSync to work, your kernel must be version 6.14 or newer and built with `CONFIG_NTSYNC=y` or `CONFIG_NTSYNC=m`. On non-systemd systems, you must also have a `ulimit -Hn` of 524288 or higher.
@@ -585,6 +606,8 @@ Without HIDRAW access, Wine retains its normal SDL fallback, which does not prov
 |                      | `PROTON_STEAMINPUT_LAYOUT_DS4` | Force the fallback controller to use the DualShock 4 profile instead of automatic layout detection. |
 |                      | `PROTON_STEAMINPUT_LAYOUT_DS5` | Force the fallback controller to use the DualSense profile instead of automatic layout detection. |
 | `wayland`            | `PROTON_USE_WAYLAND` or `PROTON_ENABLE_WAYLAND` | Enables the Wayland driver. |
+| `hdr`                | `PROTON_ENABLE_HDR` or `PROTON_USE_HDR` | Legacy HDR overrides; no longer required for automatic detection in DX11 or DX12. Set to `0` to disable HDR reporting. If both are set, `PROTON_USE_HDR` takes precedence. Does not select the Wayland driver. See [HDR](#hdr). |
+|                      | `DXVK_NO_HDR` | Set to `1` to disable HDR reporting on both Wine display drivers, including for DX12 through the shared DXGI implementation. Takes precedence over HDR opt-in flags. |
 |                      | `PROTON_USE_X11_EXCLUSIVE` | Under Wine-Wayland, use `winex11.drv` only for the executable specified by this value. Accepts an exact executable basename such as `Launcher.exe` or a case-insensitive Windows path fragment such as `Vendor\\Launcher.exe`; other processes remain on Wine-Wayland. |
 | `winebth`            | `PROTON_ENABLE_WINEBTH`        | Enables `winebth.sys`, Wine's Bluetooth driver, which is disabled by default. Needed for Bluetooth LE devices such as smart trainers and controllers in Zwift or Rouvy. Requires BlueZ. |
 | `wow64`              | `PROTON_USE_WOW64`             | Enables wow64. |

@@ -69,6 +69,48 @@ Source/metadata inspection, patch validation, and diagnostic launches of
 the user's rebuilt runtime have been performed. The regression fixtures
 have not been assembled or run.
 
+## ARM64 Compiler Delegate Cache Race
+
+`0004-mini-order-delegate-trampoline-cache-publication.patch` adds matching
+publication/consumption barriers to the JIT delegate trampoline cache.
+The 2026-10-13 Ampere `GE-Proton11-8-aarch64` build aborted with SIGSEGV
+while Roslyn compiled `net_4_x-linux/mscorlib.dll` during the System.Drawing
+bootstrap (`Makefile.in`'s drawing stamp, `mono.make:181`, error 134).
+This is the native ARM64 host Mono, not an emulated Windows compiler.
+
+Offline inspection of the saved core found an `Action` for Roslyn's
+`<CompileNamedTypeAsync>b__0` with a valid optimized `invoke_impl` and a
+NULL `method_ptr`. Its shared `MonoDelegateTrampInfo` had both valid pointers.
+Disassembly confirmed that the constructor copies `invoke_impl` and then
+`method_ptr` without an acquire barrier, while the runtime publishes those
+fields without a release barrier. The optimized ARM64 invoke stub loads
+the NULL target and branches to address zero. Ordering the cache accesses
+prevents this mismatched snapshot; a barrier also precedes publication of
+the delegate's own optimized entry point. No compiler parallelism, profile,
+game overrides, or graphics code is changed.
+
+The existing prep loop picks up patch 0004 automatically. Re-run prep before
+the next build so the host runtime is rebuilt as well as the Windows DLLs.
+Do not apply it only to the copied build tree: that tree is regenerated.
+The core and source establish the missing synchronization; the fixed ARM64
+build still requires validation by the user.
+
+`tests/delegate-cache-publication.cs` stresses simultaneous construction
+and invocation of instance, shared-generic, and static delegates, creating
+fresh AppDomains to exercise cold caches. It is probabilistic and a single
+successful run does not establish that an unpatched runtime is safe.
+After building the patched host Mono, run it manually using that runtime
+and its matching class libraries, for example from the Wine-Mono source root:
+
+```sh
+build/mono-unix/runtime/mono-wrapper mono/mcs/class/lib/net_4_x-linux/mcs.exe \
+    -out:/tmp/delegate-cache-publication.exe /path/to/patches/wine-mono/tests/delegate-cache-publication.cs
+MONO_PATH="$PWD/mono/mcs/class/lib/net_4_x-linux" \
+    build/mono-unix/runtime/mono-wrapper /tmp/delegate-cache-publication.exe
+```
+
+The agent has not compiled or run this fixture, nor restarted the Ampere build.
+
 ## FNA Stencil Reference Ordering
 
 `fna/0001-graphicsdevice-preserve-stencil-reference-order.patch` corrects
