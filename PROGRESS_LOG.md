@@ -14,6 +14,29 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
   - The whole branch differs from `banner-proton/11.7` only in the 22 files GE changed.
 - **Checked:** CachyOS has no release newer than `cachyos-11.0-20261005-slr`, so tier 3 stays at 17 commits. FEX stays at `14c92681` (the `FEX-2610` tag, GE's pin). DXVK stays at `2c94c5f2`; GE's two new DXVK patches apply to it with offsets only.
 - **11-7.6** (FEX version name, no `xalia.pdb`) was never released. Its fixes carry over into 11-9.1.
+- **Pins:** GE-Proton11-9 `01bfbf67b35418fdd705f2be09e0bfb43eece24b`. Valve Wine bleeding-edge `981e2f0b9007` (unchanged). FEX `FEX-2610-0-g14c9268`. DXVK `2c94c5f2` (v3.1.1-76, one past GE's `71ec7b5b`). vkd3d-proton `22307558` and vkd3d `fed0c341` (GE's pins, unchanged).
+- **Per tier:**
+
+  | Tier | Status |
+  |---|---|
+  | 1 | Same commit as 11.7 |
+  | 2 | Fresh GE-Proton11-9 run, 0 failed patches. The `Verify wine tier 2` workflow reproduced it exactly (run 38617913701). |
+  | 2.1 | Dropped: already upstream. GE's `em-fixups/0067` is the identical file, applied inside tier 2, and all 11 of its added lines are present. |
+  | 3 | 18 commits (group start + 17 CachyOS), applied clean |
+  | 4 | 11 commits, applied clean |
+  | 5 | esync, applied clean |
+  | 6 | 2 commits, applied clean |
+  | 7 | 1 commit, applied clean |
+
+  Every tier from 3 to 7 is line-for-line the same change as on 11.7. Nothing needed adjusting.
+- **Wine branch:** proton-wine `banner-proton/11.9` tip `e72ecf5d`, tags `bp-11.9-tier1..7`.
+- **Build:** run 38617926549 on `ff0f9052`, green in 28m41s with publish=false (no release, no tag). The wine group took 7 min with a warm ccache.
+- **Verify:** all markers present (SSBS, VMEM, SFN, esync/fsync/ntsync, tier 6 and 7 traces). ntdll exports 291 = 291 and the protocol is unchanged. No `.dbg`/`.pdb` files are left in mono or Xalia.
+- **Binaries:** `ntdll.so` is byte-identical to 11-7.5 (`844bed4e`).
+- **Compared with 11-7.5:** 9673 vs 9674 entries; the one missing is `xalia.pdb`. Sizes differ only in `mountmgr.so`, `winewayland.so`, `winex11.so`, DXVK `d3d11`/`d3d9`/`dxgi` and `proton`.
+- **Artifact:** `DroidDeck-Proton-11-9.1-aarch64`: tar.gz 625,414,776 B (artifact zip 625,415,309 B). GE-Proton11-9-aarch64.tar.gz is 647,938,895 B.
+- **Status:** CI-green only. Not staged to the device yet (the user will download it later) and not device-proven.
+- **CI note:** pushing `ge-master` started GE's own `release.yml` (failed with no jobs, no release). That workflow is now disabled in this repo's Actions settings.
 
 ## 2026-10-11
 
