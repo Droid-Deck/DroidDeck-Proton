@@ -2,6 +2,15 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-10-15
+
+### Org build + source mirror
+- **11-9.1 released** on The412Banner/DroidDeck-Proton (Latest, 2026-10-14) from the staged run 38617926549 artifacts; installed on the device, 11-7.5/11-7.6 removed.
+- **Org repo** Droid-Deck/DroidDeck-Proton: main and ge-master brought level with this repo (the org-only README commit `1fbcff87` had the same tree as `0a50d239`). GE's `release.yml` disabled there too.
+- **x.org outage:** org run 38706856896 failed in `misc`: `wget` of `xrandr-1.5.4.tar.xz` from www.x.org timed out (xorg.freedesktop.org down). Nothing wrong with the build itself.
+- **Fix: source mirror.** The files the build fetches from outside GitHub (xrandr from x.org, wine-gecko from dl.winehq.org) are now hosted as assets of the org prerelease `build-sources`. `banner-proton/mirrored-sources.txt` lists them with sha256; a new `_group.yml` step puts verified copies in `contrib/` before make, so Makefile.in's wget rules are skipped. A missing or mismatched file falls back to the original URL. xrandr 1.5.4 checked against the sha512 published by Arch and Fedora.
+- `_group.yml` is part of every group's cache key, so the next build rebuilds all groups once (ccache stays warm).
+
 ## 2026-10-14
 
 ### 11-9.1: rebased on GE-Proton11-9 (artifacts only, no release)

@@ -1,0 +1,9 @@
+# Source files the build downloads from servers outside GitHub, mirrored as assets of the
+# Droid-Deck/DroidDeck-Proton release "build-sources". CI fetches each one from the mirror into
+# contrib/ (where Makefile.in's wget rules would put it) if the sha256 matches; a file that is
+# missing or wrong is skipped and make downloads it from the original URL as before.
+# When GE bumps one of these versions, upload the new file to the release and update this list.
+# <file> <sha256>
+xrandr-1.5.4.tar.xz 2cafccb2aaf2491a4068676117a0d4f90ab307724b96fffc54cd1da953779400
+wine-gecko-2.47.4-x86.tar.xz 2cfc8d5c948602e21eff8a78613e1826f2d033df9672cace87fed56e8310afb6
+wine-gecko-2.47.4-x86_64.tar.xz fd88fc7e537d058d7a8abf0c1ebc90c574892a466de86706a26d254710a82814

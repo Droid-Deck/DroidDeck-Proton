@@ -139,6 +139,21 @@ jobs:
           sed -i 's/^CFLAGS += -ggdb -ffunction-sections/CFLAGS += -ffunction-sections/' Makefile.in
           grep -n '^CFLAGS += -ffunction-sections' Makefile.in
 
+      - name: Seed contrib/ from the source mirror
+        run: |
+          # x.org / dl.winehq.org outages must not stop a build: use our mirrored copies
+          # (banner-proton/mirrored-sources.txt), checked by sha256; anything else falls back to wget.
+          mkdir -p contrib
+          grep -Ev '^(#|$)' banner-proton/mirrored-sources.txt | while read -r f sum; do
+            if curl -fsSL --retry 3 -m 300 -o "contrib/$f.part" \
+                "https://github.com/Droid-Deck/DroidDeck-Proton/releases/download/build-sources/$f" &&
+               echo "$sum  contrib/$f.part" | sha256sum -c --quiet; then
+              mv "contrib/$f.part" "contrib/$f"; echo "mirror: $f"
+            else
+              rm -f "contrib/$f.part"; echo "::warning::mirror miss for $f, make will use the original URL"
+            fi
+          done
+
       - name: Pin source mtimes
         run: |
           find . -path ./build -prune -o -name .git -prune -o -print0 | xargs -0 -r touch -h -d "@$EPOCH"
