@@ -22,62 +22,63 @@ them can be bisected or turned off on its own.
 
 | Tier | Contents | Tag |
 |---|---|---|
-| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.9-tier1` |
-| 2 | Everything GE-Proton11-9 applies to Wine | `bp-11.9-tier2` |
-| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.9-tier3` |
-| 4 | Our portable fixes from the Bannerlator layers | `bp-11.9-tier4` |
-| 5 | DroidDeck esync, built in | `bp-11.9-tier5` |
-| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.9-tier6` |
-| 7 | Media fixes (DirectShow FMVs no longer upside down) | `bp-11.9-tier7` |
+| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.10-tier1` |
+| 2 | Everything GE-Proton11-10 applies to Wine | `bp-11.10-tier2` |
+| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.10-tier3` |
+| 4 | Our portable fixes from the Bannerlator layers | `bp-11.10-tier4` |
+| 5 | DroidDeck esync, built in | `bp-11.10-tier5` |
+| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.10-tier6` |
+| 7 | Media fixes (DirectShow FMVs no longer upside down) | `bp-11.10-tier7` |
 
 Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine), branch
-`banner-proton/11.9` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
+`banner-proton/11.10` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
 
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-9.1)</b></summary>
+<summary><b>Pins (11-10.1)</b></summary>
 
 | Component | Commit |
 |---|---|
-| GE-Proton (`proton-ge-custom` tag `GE-Proton11-9`) | `01bfbf67b35418fdd705f2be09e0bfb43eece24b` |
-| DXVK (`doitsujin/dxvk` master, one past GE's pin) | `2c94c5f25cf75c313ef2a55b2e0c9276d67c28d6` |
-| Valve Wine `bleeding-edge` (same as GE) | `981e2f0b9007fd70a6e0ed6119cb18f4164e26f9` |
-| FEX (same as GE: release `FEX-2610`) | `14c92681f4d62cf84d901460e0358de09c8847a7` |
-| CachyOS Wine `cachyos_11.0_20261001/main` (release `cachyos-11.0-20261005-slr`, still the latest) | `2ce6b44caa66a56ec99c7826ae564c088abc1b9f` |
-| DroidDeck-Proton Wine `banner-proton/11.9` | `e72ecf5d2f2906fe4e690c1be48abd96683e1a07` |
+| GE-Proton (`proton-ge-custom` tag `GE-Proton11-10`) | `8f2047471a96de175cce67d844c03bad934ff3b1` |
+| DXVK (same as GE: v3.1.1-134) | `2cb40186c43d617b5bd349a3756721aa4bd24b6d` |
+| Valve Wine `bleeding-edge` (same as GE, 2026-10-16) | `c53678ab22a85f0fad3588dd34f0452a463bd015` |
+| FEX (same as GE: `FEX-2610-30`) | `741e146fdf5a89517e1a67e3c899907cfba6131a` |
+| CachyOS Wine `cachyos_11.0_20261014/main` (release `cachyos-11.0-20261014-slr`) | `6a7adb2adf750046ad01091b369ea95c8b551a30` |
+| DroidDeck-Proton Wine `banner-proton/11.10` | `7e20ceeb5e33601fd1e65c9f3d843588abcece77` |
 
 vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
-GE-Proton11-9's pins.
+GE-Proton11-10's pins.
 
 </details>
 
 <details>
 <summary><b>Tier 2 – GE-Proton</b></summary>
 
-All of GE-Proton's Wine patching at `GE-Proton11-9` (`01bfbf67`), applied by GE's own `protonprep`
+All of GE-Proton's Wine patching at `GE-Proton11-10` (`8f204747`), applied by GE's own `protonprep`
 Wine section on tier 1, one commit per section: configure revert, EM-11 wine-wayland + wineopenxr + EM fixups,
 wine-staging (with GE's exclusions and rebased sets), game patches, hotfixes, pending upstream patches
 and GE's custom patches (FSR, Reflex, OptiScaler, video rework, DS5 haptics, Bluetooth LE, …). Everything
 applied cleanly. The `Verify wine tier 2` workflow re-runs GE's section on tier 1 and checks the result
 matches tier 2 plus its follow-ups.
 
-New in GE-Proton11-8/11-9 compared with the 11.7 branch: schannel incomplete-TLS-record size fix,
-xwayland-satellite minimization and off-desktop minimized paint fixes, winewayland windows stay
-recoverable without minimize support, HDR auto-detection (`em-fixups/0069`, `0070`), winedmo seek flush
-and Crimson Desert's video loop fix (`ge-video-rework/0091`, `0092`), DualSense endpoint properties
-(`proton-ds5-haptic/0207`), and wine-staging's `ntdll-Serial_Port_Detection` left out. The 11.7 branch's
-follow-up `bp-11.7-tier2.1` (`em-fixups/0067`, Guild Wars Reforged alt+tab) is part of tier 2 now.
+New in GE-Proton11-10: Valve Wine bleeding-edge 2026-10-16 (upstream syscall emulation for EAC/EOS
+launchers, x86_64 only), ACE anti-cheat driver fixes (ntoskrnl, lsass SamSs stub; Arknights: Endfield),
+Star Citizen's bundled AMD AGS, faster shared SRW lock releases, llvm-libc fixes, the PlayStation
+controller XInput fallback no longer rescanning HID devices on every poll, Bluetooth DS4/DualSense
+rumble through the fallback, KWin per-monitor HDR state and owned-popup destruction fixes
+(`em-fixups/0071`, `0072`), MonoGame song replay fix (`ge-video-rework/0093`, `0094`).
 
-GE's non-Wine changes arrive through the `ge-master` merge: the DXVK HDR auto-detection and StarCraft II
-patches, a Wine-Mono delegate-cache fix and the `proton` script's HDR defaults.
+GE's non-Wine changes arrive through the `ge-master` merge: DXVK v3.1.1-134, D7VK rebased on it,
+vkd3d-proton synchronization fix, FEX-2610-30, and the `proton` script's controller defaults.
 
 </details>
 
 <details>
 <summary><b>Tier 3 – CachyOS</b></summary>
 
-Cherry-picked (`-x`) from CachyOS Wine `2ce6b44c`:
+Cherry-picked (`-x`) from CachyOS Wine (the first 17 carried from 11-9.1 and still in CachyOS
+`6a7adb2a`, release `cachyos-11.0-20261014-slr`):
 
 - ntdll: `WINE_DISABLE_SFN` option (Yakuza 5 cutscenes) – Pedro Nishiyama
 - win32u: opaque webviews for Wuthering Waves – NelloKudo
@@ -89,8 +90,11 @@ Cherry-picked (`-x`) from CachyOS Wine `2ce6b44c`:
 - wined3d: pixel-format fixes – Elizabeth Figura, Zhiyi Zhang, Patrick Zacharias
 - xaudio2_7: Darksiders Warmastered crash workaround – NelloKudo
 - mfplat: R8_UINT in MFCreateDXGISurfaceBuffer – Nikolay Sivov
+- setupapi: initialize the Service value size when checking for winehid devices – M0n7y5 (new in 20261014)
 
-**Not picked:** anything GE or Valve Wine already carries; x86_64-only code (EAC/EOS syscall
+**Not picked:** anything GE or Valve Wine already carries (CachyOS 20261014's crypt32 certificate-chain
+and schannel fixes, the ACE anti-cheat fixes); win32u "don't decorate maximized windows" (same line as GE's
+frameless-window change); x86_64-only code (EAC/EOS syscall
 forwarding); changes that conflict with GE's winedmo video rework; branding/policy defaults (fsync on,
 Windows 11, version string, font smoothing); larger features left for later (winepipewire, futex
 tuning, FSR4/MLFG, kernel-object series, LTO/clang).
