@@ -47,7 +47,7 @@ import protonfixes
 #and edit it if needed.
 import utilities
 
-CURRENT_PREFIX_VERSION="GE-Proton11-9"
+CURRENT_PREFIX_VERSION="GE-Proton11-10"
 
 PFX="Proton: "
 ld_path_var = "LD_LIBRARY_PATH"
@@ -1921,6 +1921,15 @@ class Session:
         # Winebus leaves Steam Input and the physical audio/haptics identity intact.
         if appid == "2344520":  # Diablo IV
             self.env.setdefault("PROTON_SONY_DUALSENSE_EDGE_AS_DUALSENSE", "1")
+
+        # These games support native Sony controllers without Steam Input, but
+        # also assign the automatic XInput fallback to a player slot. Sackboy
+        # puts the DualSense on player two; Rune Factory 4 Special scrambles DS4 input.
+        if appid in [
+                "1599660",  # Sackboy: A Big Adventure (#843)
+                "1580240",  # Rune Factory 4 Special (#843)
+                ]:
+            self.env.setdefault("PROTON_SONY_AUTO_XINPUT", "0")
 
         # These games have perfect DS4 mappings, but do not support DS5/DS5 Edge.
         # In this case we fake a DS4 controller for perfect button mappings and icons
