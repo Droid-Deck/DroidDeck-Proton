@@ -2,6 +2,22 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-10-19
+
+### 11-10.1: rebased on GE-Proton11-10 and CachyOS 20261014
+- **Base:** `ge-master` fast-forwarded `01bfbf67` → GE-Proton11-10 `8f204747` and merged into main. DXVK now follows GE's pin `2cb40186` (v3.1.1-134, 58 commits past our old `2c94c5f2`). FEX `741e146f` (FEX-2610-30), D7VK and vkd3d-proton are GE's new pins.
+- **Wine:** new branch `banner-proton/11.10` (`7e20ceeb`), tags `bp-11.10-tier1..7`:
+  - Tier 1: Valve bleeding-edge `c53678ab` (2026-10-16), 22 commits past `981e2f0b`. CachyOS 20261014 is built on the same commit.
+  - Tier 2: GE-Proton11-10's wine section run unmodified, one commit per section, 0 failed patches. The `Verify wine tier 2` workflow reproduced it exactly (run 39278598888).
+  - Tier 3: the 17 CachyOS commits carried from 11.9 (all still in `cachyos-11.0-20261014-slr`, wine `6a7adb2a`) plus `setupapi: Initialize the Service value size when checking for winehid devices` (new). Left out: win32u "don't let the drivers decorate maximized windows" (same line as GE's frameless-window change); crypt32 CERT_CHAIN_ENGINE_CONFIG and schannel fixes (already in GE); ACE fixes (in GE-Proton11-10).
+  - Tiers 4–7 cherry-picked from `banner-proton/11.9` with no conflicts; each tier is the same change as on 11.9. New tier 4 = `5130c288` (`WINE_PROTOCOL_BASE`); the protocol does not change in tiers 5–7.
+  - Valve's new syscall emulation (Syscall User Dispatch) is x86_64-only code and is not built for aarch64.
+- **Build:** run 39278603403 on branch `rebase/11-10` (`496a921f`), green in 61 min (DXVK/FEX/D7VK/vkd3d-proton rebuilt), publish=false.
+- **Verify:** all markers present; ntdll exports 291 = 291; FEX `FEX-2610-30-g741e146`; igdext copy OK; no `.dbg`/`.pdb`.
+- **Compared with 11-9.1:** 9675 vs 9673 entries, the two new ones are `lsass.exe` (GE's SamSs stub for ACE). Sizes differ in DXVK, D7VK, vkd3d-proton, xinput, ntoskrnl, winewayland, ntdll, wine.inf, the prefix registry and `proton`.
+- **Artifact:** `DroidDeck-Proton-11-10.1-aarch64.tar.gz` 625,560,774 B.
+- **Status:** CI-green; published as a prerelease for device testing. The org repo gets it after it is device-proven.
+
 ## 2026-10-15
 
 ### Org build + source mirror
