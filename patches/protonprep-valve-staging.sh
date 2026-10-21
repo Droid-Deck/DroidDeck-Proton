@@ -579,6 +579,10 @@ apply_all_in_dir() {
     echo "WINE: -GAME FIXES- ntdll: don't leave a stale alert after a raced RtlWaitOnAddress() timeout (Space Marine 2 mid-mission crash)"
     apply_patch "../patches/wine-hotfixes/pending/ntdll-take-in-flight-alert-when-wait-on-address-times-out.patch"
 
+    # https://github.com/GloriousEggroll/proton-ge-custom/issues/852
+    echo "WINE: -GAME FIXES- winewayland: advertise the OpenVR/OpenXR Vulkan device pseudo-extensions like winex11 (DXVK/vkd3d device creation fails on Wayland with an OpenXR runtime installed)"
+    apply_patch "../patches/wine-hotfixes/pending/winewayland-advertise-openvr-openxr-device-extensions.patch"
+
     # Bluetooth LE GATT and WinRT BLE (Zwift, Rouvy trainers). winebth.sys stays disabled
     # unless PROTON_ENABLE_WINEBTH=1. https://github.com/GloriousEggroll/proton-ge-custom/issues/814
     # https://github.com/evanjt/wine
