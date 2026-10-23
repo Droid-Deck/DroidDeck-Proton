@@ -17,52 +17,68 @@ running Windows games through ARM64 Proton with FEX.
 ## What's inside
 
 DroidDeck-Proton is GE-Proton (DXVK, vkd3d-proton, FEX, protonfixes, media stack and the `proton`
-script, unchanged) with Wine built in seven tiers. Each tier is a tag on the Wine branch, so any one of
+script, unchanged) with Wine built in six tiers. Each tier is a tag on the Wine branch, so any one of
 them can be bisected or turned off on its own.
 
 | Tier | Contents | Tag |
 |---|---|---|
-| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.10-tier1` |
-| 2 | Everything GE-Proton11-10 applies to Wine | `bp-11.10-tier2` |
-| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.10-tier3` |
-| 4 | Our portable fixes from the Bannerlator layers | `bp-11.10-tier4` |
-| 5 | DroidDeck esync, built in | `bp-11.10-tier5` |
-| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.10-tier6` |
-| 7 | Media fixes (DirectShow FMVs no longer upside down) | `bp-11.10-tier7` |
+| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.11-tier1` |
+| 2 | Everything GE-Proton11-11 applies to Wine, plus two GE fixes from after 11-11 | `bp-11.11-tier2` |
+| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.11-tier3` |
+| 4 | Our portable fixes from the Bannerlator layers | `bp-11.11-tier4` |
+| 5 | DroidDeck esync, built in | `bp-11.11-tier5` |
+| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.11-tier6` |
+
+Up to 11-10.1 there was a tier 7 (DirectShow FMVs upside down). GE-Proton11-11 carries the same fix
+(`ge-video-rework/0096`), so it is part of tier 2 now.
 
 Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine), branch
-`banner-proton/11.10` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
+`banner-proton/11.11` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
 
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-10.1)</b></summary>
+<summary><b>Pins (11-11.1)</b></summary>
 
 | Component | Commit |
 |---|---|
-| GE-Proton (`proton-ge-custom` tag `GE-Proton11-10`) | `8f2047471a96de175cce67d844c03bad934ff3b1` |
+| GE-Proton (`proton-ge-custom` tag `GE-Proton11-11`) | `c0c2ee35e6d4d3bff4d39c6246ac46636434feb8` |
 | DXVK (same as GE: v3.1.1-134) | `2cb40186c43d617b5bd349a3756721aa4bd24b6d` |
 | Valve Wine `bleeding-edge` (same as GE, 2026-10-16) | `c53678ab22a85f0fad3588dd34f0452a463bd015` |
 | FEX (same as GE: `FEX-2610-30`) | `741e146fdf5a89517e1a67e3c899907cfba6131a` |
-| CachyOS Wine `cachyos_11.0_20261014/main` (release `cachyos-11.0-20261014-slr`) | `6a7adb2adf750046ad01091b369ea95c8b551a30` |
-| DroidDeck-Proton Wine `banner-proton/11.10` | `7e20ceeb5e33601fd1e65c9f3d843588abcece77` |
+| CachyOS Wine `cachyos_11.0_20261014/main` (release `cachyos-11.0-20261015-slr`) | `cd14106e4fc0f96006005b07985e49cc1517e9c0` |
+| DroidDeck-Proton Wine `banner-proton/11.11` | `219dddec24cbf30aca79f7189073a127134a4fec` |
 
 vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
-GE-Proton11-10's pins.
+GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1.
 
 </details>
 
 <details>
 <summary><b>Tier 2 – GE-Proton</b></summary>
 
-All of GE-Proton's Wine patching at `GE-Proton11-10` (`8f204747`), applied by GE's own `protonprep`
+All of GE-Proton's Wine patching at `GE-Proton11-11` (`c0c2ee35`) plus two later GE fixes (below), applied by GE's own `protonprep`
 Wine section on tier 1, one commit per section: configure revert, EM-11 wine-wayland + wineopenxr + EM fixups,
 wine-staging (with GE's exclusions and rebased sets), game patches, hotfixes, pending upstream patches
 and GE's custom patches (FSR, Reflex, OptiScaler, video rework, DS5 haptics, Bluetooth LE, …). Everything
 applied cleanly. The `Verify wine tier 2` workflow re-runs GE's section on tier 1 and checks the result
 matches tier 2 plus its follow-ups.
 
-New in GE-Proton11-10: Valve Wine bleeding-edge 2026-10-16 (upstream syscall emulation for EAC/EOS
+New in GE-Proton11-11 (hotfix): games no longer freeze when a video is skipped while MPEG-1 audio plays
+(GE #865), MPEG-1 video through AMStream no longer upside down (GE #863), no heap corruption from
+scaled video frames (GE #864, aderumier), vkd3d-proton no longer trips Easy Anti-Cheat in Star Citizen
+and Hunt: Showdown (GE #858), Star Citizen AMD AGS override removed, protonfixes update (Star Citizen
+.NET 4.8, mod loaders, Windows version re-applied after winetricks).
+
+Taken from GE's master after 11-11 (cherry-picked with `-x` into this repo's `protonprep`):
+- ntdll: take the in-flight alert when a `RtlWaitOnAddress()` wait times out (Space Marine 2 crash after
+  long play; from proton-je, Jason Eggleston) – GE `98efe1cd`
+- winewayland: advertise the OpenVR/OpenXR Vulkan device pseudo-extensions like winex11 (VR games on
+  Wine's Wayland driver) – GE `e15b1e15`, GE #852
+- lsteamclient: keep the automatic PlayStation (Sony) Steam Input fallback when Steam Input is off for
+  the game but on globally – GE `bbef7006` (lsteamclient patch 0017, applied at build time)
+
+Earlier, in GE-Proton11-10: Valve Wine bleeding-edge 2026-10-16 (upstream syscall emulation for EAC/EOS
 launchers, x86_64 only), ACE anti-cheat driver fixes (ntoskrnl, lsass SamSs stub; Arknights: Endfield),
 Star Citizen's bundled AMD AGS, faster shared SRW lock releases, llvm-libc fixes, the PlayStation
 controller XInput fallback no longer rescanning HID devices on every poll, Bluetooth DS4/DualSense
@@ -77,8 +93,8 @@ vkd3d-proton synchronization fix, FEX-2610-30, and the `proton` script's control
 <details>
 <summary><b>Tier 3 – CachyOS</b></summary>
 
-Cherry-picked (`-x`) from CachyOS Wine (the first 17 carried from 11-9.1 and still in CachyOS
-`6a7adb2a`, release `cachyos-11.0-20261014-slr`):
+Cherry-picked (`-x`) from CachyOS Wine (the first 18 carried from 11-10.1 and still in CachyOS
+`cd14106e`, release `cachyos-11.0-20261015-slr`):
 
 - ntdll: `WINE_DISABLE_SFN` option (Yakuza 5 cutscenes) – Pedro Nishiyama
 - win32u: opaque webviews for Wuthering Waves – NelloKudo
@@ -91,10 +107,13 @@ Cherry-picked (`-x`) from CachyOS Wine (the first 17 carried from 11-9.1 and sti
 - xaudio2_7: Darksiders Warmastered crash workaround – NelloKudo
 - mfplat: R8_UINT in MFCreateDXGISurfaceBuffer – Nikolay Sivov
 - setupapi: initialize the Service value size when checking for winehid devices – M0n7y5 (new in 20261014)
+- crypt32: keep the order of authenticated attributes when verifying signatures, with tests (WineHQ MR
+  11824: FL Studio, Genshin Impact / Zenless Zone Zero CN editions) – Michael Nelson (new in 20261015)
 
 **Not picked:** anything GE or Valve Wine already carries (CachyOS 20261014's crypt32 certificate-chain
 and schannel fixes, the ACE anti-cheat fixes); win32u "don't decorate maximized windows" (same line as GE's
-frameless-window change); x86_64-only code (EAC/EOS syscall
+frameless-window change), and CachyOS 20261015's revert of it; CachyOS 20261015's winewayland owned-popup
+reparenting (written against CachyOS's wine-wayland, conflicts with GE's EM-11 tree); x86_64-only code (EAC/EOS syscall
 forwarding); changes that conflict with GE's winedmo video rework; branding/policy defaults (fsync on,
 Windows 11, version string, font smoothing); larger features left for later (winepipewire, futex
 tuning, FSR4/MLFG, kernel-object series, LTO/clang).
@@ -148,17 +167,6 @@ Not taken: the `LC_ALL=C.UTF-8` default (bionic-only; DroidDeck uses glibc).
 </details>
 
 <details>
-<summary><b>Tier 7 – Media fixes</b></summary>
-
-- **winedmo – DirectShow transforms follow the allocator's row order** (`quartz_transform.c`).
-  amstream's DirectDraw stream connects with bottom-up RGB but hands out top-down surfaces, signalled by
-  a negative `biHeight` on each sample. GE's winedmo transform ignored that, so MPEG-1 FMVs played
-  through amstream (e.g. Toy Story 2) were upside down. It now follows the sample's row order; allocators
-  that report no type are unaffected. (GE fixed the same issue for qasf only.)
-
-</details>
-
-<details>
 <summary><b>Building</b></summary>
 
 Builds run on GitHub Actions (`ubuntu-24.04-arm`, Valve's `steamrt4` arm64 Proton SDK), like GE's
@@ -171,7 +179,7 @@ aarch64 builds.
   against an earlier release).
 - **Caches** – each group's output is keyed by its sources and skipped when cached; per-group ccache;
   SDK image cache.
-- **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 and 7 fixes present in source and
+- **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 fixes and the winedmo row order fix present in source and
   binaries (trace strings); no leftover "Banner-Proton" names.
 
 Local builds: follow [docs/README.GE-Proton.md](docs/README.GE-Proton.md), using `banner-proton/prep.sh`

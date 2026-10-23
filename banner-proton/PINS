@@ -1,21 +1,22 @@
 # Upstream pins for this DroidDeck-Proton version. Shell-sourceable.
-GE_PROTON_COMMIT=8f2047471a96de175cce67d844c03bad934ff3b1
-GE_PROTON_RELEASE=GE-Proton11-10
+GE_PROTON_COMMIT=c0c2ee35e6d4d3bff4d39c6246ac46636434feb8
+GE_PROTON_RELEASE=GE-Proton11-11
+# Plus GE master commits cherry-picked into patches/ (-x): 98efe1cd, e15b1e15 (wine, in tier 2), bbef7006 (lsteamclient).
 VALVE_WINE_BRANCH=bleeding-edge
 VALVE_WINE_COMMIT=c53678ab22a85f0fad3588dd34f0452a463bd015
-CACHYOS_RELEASE=cachyos-11.0-20261014-slr
+CACHYOS_RELEASE=cachyos-11.0-20261015-slr
 CACHYOS_WINE_BRANCH=cachyos_11.0_20261014/main
-CACHYOS_WINE_COMMIT=6a7adb2adf750046ad01091b369ea95c8b551a30
+CACHYOS_WINE_COMMIT=cd14106e4fc0f96006005b07985e49cc1517e9c0
 WINE_REPO=https://github.com/The412Banner/proton-wine
-WINE_BRANCH=banner-proton/11.10
-WINE_TIER_TAGS="bp-11.10-tier1 bp-11.10-tier2 bp-11.10-tier3 bp-11.10-tier4 bp-11.10-tier5 bp-11.10-tier6 bp-11.10-tier7"
+WINE_BRANCH=banner-proton/11.11
+WINE_TIER_TAGS="bp-11.11-tier1 bp-11.11-tier2 bp-11.11-tier3 bp-11.11-tier4 bp-11.11-tier5 bp-11.11-tier6"
 # Wine patches GE added after tier 2 was made, committed on top of the branch (tags, in order).
 # verify-tier2.sh expects a fresh run of GE's wine section to equal tier 2 plus these.
-# None on banner-proton/11.10: tier 2 was made from GE-Proton11-10 itself.
+# None on banner-proton/11.11: tier 2 was made from this repo's protonprep (GE-Proton11-11 + 98efe1cd, e15b1e15).
 WINE_TIER2_FOLLOWUPS=""
-# DXVK: GE-Proton11-10's pin (v3.1.1-134), 58 commits past the master commit 11-9.1 used (2c94c5f2).
+# DXVK: GE-Proton11-11's pin (v3.1.1-134), unchanged since 11-10.
 DXVK_COMMIT=2cb40186c43d617b5bd349a3756721aa4bd24b6d
-# FEX: GE-Proton11-10's pin 741e146f (FEX-2610-30).
+# FEX: GE-Proton11-11's pin 741e146f (FEX-2610-30), unchanged since 11-10.
 STEAMRT_IMAGE=registry.gitlab.steamos.cloud/proton/steamrt4/sdk/arm64-llvm:4.0.20260714.251823-0
 # The wineserver protocol (protocol.def and its generated headers) must equal this commit's.
 WINE_PROTOCOL_BASE=5130c2882671e75841caa26288669ac5ae14c9b7
@@ -23,4 +24,4 @@ WINE_PROTOCOL_BASE=5130c2882671e75841caa26288669ac5ae14c9b7
 DROIDDECK_ESYNC_PATCH="Droid-Deck/DroidDeck-Components droiddeck-esync/patches/valve-11/0001-droiddeck-esync.patch@780ab619de"
 # Tier 6: Arihany's SD card (noexec, force_anon) and drive-root copy fixes, from proton-wine proton_11.0.
 ARIHANY_FIXES_SOURCE="The412Banner/proton-wine proton_11.0@497c384f"
-# Tier 7: our own media fixes (winedmo DirectShow transform follows the allocator's row order: amstream FMVs upside down).
+# No tier 7 since 11-11.1: GE-Proton11-11 carries the same winedmo row order fix (ge-video-rework/0096).

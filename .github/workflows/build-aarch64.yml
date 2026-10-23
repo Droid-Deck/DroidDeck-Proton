@@ -218,7 +218,7 @@ jobs:
           tools/make_requests
           git diff --stat --exit-code -- $files
           echo "protocol unchanged since $WINE_PROTOCOL_BASE"
-      - name: Tier 6 and 7 fixes in the wine source
+      - name: Tier 6 fixes and the winedmo row order fix in the wine source
         run: |
           # The tier 6 fixes have no getenv string of their own; check the code itself so a rebase
           # that drops a hunk fails here rather than shipping a build without it.
@@ -238,11 +238,12 @@ jobs:
           has $s "size_t dir_len = ptr - file_name + 1;"
           has $s "if (ptr == file_name || (ptr == file_name + 2 && file_name[1] == ':'))"
           has $s "lstrcpynW(file_entry->szDirectory, file_name, dir_len);"
-          # Tier 7: the winedmo DirectShow transform reads each output sample's media type and
-          # follows the row order it asks for (amstream FMVs upside down otherwise).
+          # The winedmo DirectShow transform follows the row order each output sample asks for
+          # (amstream FMVs upside down otherwise). Was our tier 7 up to 11-10.1; GE carries the
+          # same fix since GE-Proton11-11 (ge-video-rework/0096, GE #863), so it is in tier 2 now.
           q=dlls/winedmo/quartz_transform.c
-          has $q "transform_update_sample_row_order(filter, output_sample);"
-          has $q "if (filter->have_sample_row_order)"
+          has $q "if (bottom_up == filter->output_bottom_up)"
+          has $q "Switching output to %s rows."
           has $q "winedmo_transform_set_output_format(filter->winedmo_transform,"
           exit $fail
 
@@ -278,19 +279,19 @@ jobs:
           if [ -n "${DROIDDECK_ESYNC_PATCH:-}" ]; then
             need "$T/files/bin-arm64/wineserver" "droiddeck-esync: up and running"
           fi
-          # Tier 6: the trace lines that sit inside each fix (see the "Tier 6 and 7 fixes in the wine
+          # Tier 6: the trace lines that sit inside each fix (see the "Tier 6 fixes and the winedmo row order fix in the wine
           # source" check for the code itself).
           need "$T/files/lib/wine/aarch64-unix/ntdll.so" "force_anon: reading %p-%p into anonymous memory"
           shell32s=$(cd "$T" && find files -name shell32.dll | LC_ALL=C sort)
           echo "shell32.dll: $(echo $shell32s)"
           [ "$(echo "$shell32s" | grep -c .)" -ge 2 ] || { echo "expected shell32.dll for more than one arch"; fail=1; }
           for f in $shell32s; do need "$T/$f" "drive root %s: keeping the root backslash"; done
-          # Tier 7: the trace line inside the winedmo row order fix, in every arch (32-bit games
+          # The trace line inside the winedmo row order fix (GE 0096), in every arch (32-bit games
           # use the i386 one).
           winedmos=$(cd "$T" && find files -name winedmo.dll | LC_ALL=C sort)
           echo "winedmo.dll: $(echo $winedmos)"
           [ "$(echo "$winedmos" | grep -c .)" -ge 2 ] || { echo "expected winedmo.dll for more than one arch"; fail=1; }
-          for f in $winedmos; do need "$T/$f" "downstream sample asks for %s RGB rows"; done
+          for f in $winedmos; do need "$T/$f" "Switching output to %s rows."; done
           echo "sharedgpures.sys: $(find x -name sharedgpures.sys | tr '\n' ' ')"
           [ -n "$(find x -name sharedgpures.sys)" ] || fail=1
           cat "$T/version"
