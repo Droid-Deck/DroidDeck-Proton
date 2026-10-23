@@ -17,7 +17,8 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 - **Built / CI:** `Verify wine tier 2` run 39947730838 green (fresh GE run == tier 2). Build run 39947785994 on `0184fc1c` green (wine2/wine3 skipped as for 11-10.1); winedmo row order markers found in source and in the aarch64, i386 and x86_64 `winedmo.dll`. Published as prerelease `DroidDeck-Proton-11-11.1` (tag → `0184fc1c`), tarball 625,575,904 B, sha512 `e8c2bf24…34ad`.
 - **Device:** installed by hand next to 11-10.1 as `compatibilitytools.d/DroidDeck-Proton 11-11.1`: sha512 checked on host and device, 9677/9677 entries, all owned by the app (uid 10195), SELinux labels the same as 11-10.1. DroidDeck's `steam-compatibility` adds the wrapper at the next session start. Not game-tested yet.
 - **Org 11-10.1:** org run 39945045568 green; org release `DroidDeck-Proton-11-10.1` is Latest, tag → `48bcff61`, 3 assets, wine `7e20ceeb`. The personal 11-10.1 prerelease was deleted (user's go); its tag stays.
-- **Next:** user game-tests 11-11.1; then org promotion on the user's go.
+- **Device test (user, 2026-10-23):** DiRT Showdown runs; NINJA GAIDEN SIGMA runs with its FMV cutscenes upright at 60 fps (intro and subtitled cutscene). Both confirmed launched through `DroidDeck-Proton 11-11.1` (process list); no crashes in logcat, no new tombstones. Not tested: a PlayStation controller, Space Marine 2.
+- **Org:** user's go to release 11-11.1 on Droid-Deck/DroidDeck-Proton as Latest. Org `main`/`ge-master` brought level with this repo (fast-forwards, backups `refs/backup/20261023/*-before-11-11.1-org` on the org), build with publish=true, prerelease=false, compare_with `DroidDeck-Proton-11-10.1`.
 
 ## 2026-10-23
 
