@@ -8,11 +8,21 @@ running Windows games through ARM64 Proton with FEX.
 > DroidDeck-Proton is an unofficial build. It is **not** GE-Proton, Proton-CachyOS or Valve's Proton and is
 > not affiliated with GloriousEggroll, CachyOS or Valve. Please report problems here, not to those projects.
 
+This fork branch **`wine-tier8-upstream`** rebases on upstream **DroidDeck-Proton 11-11.1** (`banner-proton/11.11`,
+GE-Proton11-11) and adds one deferred **game patch** for **WoW Forever** (`WowB-ARM64.exe`, ARM64EC). Intended
+for [upstream PR #3](https://github.com/Droid-Deck/DroidDeck-Proton/pull/3). The separate **`main`** branch on
+this fork still tracks the older **11-9.1 ARM64EC WoW**–named release line for side-by-side testing on device.
+
 ## Install
 
 1. Download `DroidDeck-Proton-<version>-aarch64.tar.gz` from [Releases](../../releases).
 2. Extract it into Steam's `compatibilitytools.d` folder.
 3. Restart Steam and pick **DroidDeck-Proton &lt;version&gt;** as the game's compatibility tool.
+
+On DroidDeck, install the tarball from a **Build DroidDeck-Proton (aarch64)** run on this branch (or an upstream
+release after merge). Point Battle.net / WoW Forever at that compatibility tool; the native client is
+**`WowB-ARM64.exe`**. Use Battle.net **Play** or per-product launch options (e.g. `-d3d11`) as usual — no extra
+launcher scripts are required for this Proton build.
 
 ## What's inside
 
@@ -169,13 +179,28 @@ Not taken: the `LC_ALL=C.UTF-8` default (bionic-only; DroidDeck uses glibc).
 <details>
 <summary><b>Game patch – WoW Forever ARM64EC</b></summary>
 
-**Target:** `WowB-ARM64.exe` (WoW Forever) on DroidDeck — ARM64EC, not plain ARM64.
+**Target:** `WowB-ARM64.exe` (WoW Forever) on DroidDeck — ARM64EC, not plain ARM64. Nt syscall thunks come from
+**`include/wine/asm.h`** (winebuild / `ntdll.spec`), not the wineserver protocol.
 
-Single patch: [`patches/game-patches/wow-forever-arm64ec-ntdll.patch`](patches/game-patches/wow-forever-arm64ec-ntdll.patch)
-(ntdll `signal_arm64.c`, `asm.h` syscall stubs, KSDT/TEB dispatch sync, NLS map fallback, map-time
-ntdll dispatcher init). Registered in `patches/protonprep-valve-staging.sh` like other game fixes; applied
-at build time via `banner-proton/apply-deferred-game-patches.sh` after `prep.sh` until it lands in the
-Wine branch tags.
+Single patch (replaces the old six-file `patches/wow-tier8/` series):
+
+[`patches/game-patches/wow-forever-arm64ec-ntdll.patch`](patches/game-patches/wow-forever-arm64ec-ntdll.patch)
+
+Registered in **`patches/protonprep-valve-staging.sh`** (game patch section) like MapleStory / ACE fixes. Because
+**`banner-proton/prep.sh`** skips GE's wine patching block, the patch is applied at build time by
+**`banner-proton/apply-deferred-game-patches.sh`** immediately after `prep.sh` (see
+[`.github/workflows/_group.yml`](.github/workflows/_group.yml)), until it is baked into
+**`The412Banner/proton-wine`** tier tags.
+
+| Area | What it fixes |
+|---|---|
+| `signal_arm64.c` | Zero `CONTEXT` in `setup_exception` / `trap_handler` before `save_context` (stale debug regs → intermittent **Game Initialization Failed: I**) |
+| `asm.h` | Deck-verified TEB → KSDT syscall stubs; ARM64EC falls back to `__wine_syscall_dispatcher` when TEB slots are empty |
+| `syscall.c` / `thread.c` | Publish dispatcher in KSDT; `ntdll_arm64ec_sync_syscall_dispatch()` on EC thread start and after `ChpeV2` setup |
+| `env.c` | NLS section map fallback via `map_nls_file_as_view` when section maps fail (plain ARM64 + ARM64EC) |
+| `virtual.c` | Map-time init of `__wine_syscall_dispatcher` for manually mapped `ntdll` SEC_IMAGE views |
+
+Do not commit these changes inside the `wine` submodule; only the `.patch` file in this repo.
 
 </details>
 
@@ -195,9 +220,17 @@ aarch64 builds.
 - **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 fixes and the winedmo row order fix present in source and
   binaries (trace strings); WoW Forever deferred game patch markers after `apply-deferred-game-patches.sh`; no leftover "Banner-Proton" names.
 
-Local builds: follow [docs/README.GE-Proton.md](docs/README.GE-Proton.md), using `banner-proton/prep.sh`,
-`banner-proton/apply-deferred-game-patches.sh`, instead of `patches/protonprep-valve-staging.sh` and
-`../configure.sh --target-arch=arm64 --build-name=DroidDeck-Proton-<version> --display-name="DroidDeck-Proton <version>"`.
+**Pre-ship test (recommended before merging upstream):** on this fork, run **Actions → Build DroidDeck-Proton
+(aarch64) → Run workflow** on branch **`wine-tier8-upstream`**, set **prerelease** on and **publish** off, then
+install the artifact tarball on the phone. CI applies `prep.sh` then `apply-deferred-game-patches.sh` inside the
+arm64 Steam RT job (same order as a release build).
+
+Local prep on a dev machine (host only, not the full container compile): follow
+[docs/README.GE-Proton.md](docs/README.GE-Proton.md) — clean `wine` at **`bp-11.11-tier6`**
+(`219dddec…`), then `banner-proton/prep.sh`, then `banner-proton/apply-deferred-game-patches.sh`, then
+`../configure.sh --target-arch=arm64 --build-name=DroidDeck-Proton-<version> --display-name="DroidDeck-Proton <version>"`
+with `<version>` from `banner-proton/VERSION` (currently **`11-11.1`**). Full **`make`** needs Docker/Podman and
+Valve's **arm64-llvm** SDK image from `banner-proton/PINS`; use native **arm64** CI or hardware for a trustworthy compile.
 
 </details>
 
