@@ -2,6 +2,14 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-10-23
+
+### 11-10.1: device-proven, org brought level, org release
+- **Device:** the user ran games on 11-10.1 on the Pocket FIT (installed 2026-10-21 by hand into `compatibilitytools.d/DroidDeck-Proton 11-10.1`). User's go to promote it.
+- **Org repo** Droid-Deck/DroidDeck-Proton: `main` `bc343c25` → `7b9723af` and `ge-master` `01bfbf67` → `8f204747`, both fast-forwards (the org had no commits of its own). Backups `refs/backup/20261023/main-before-11-10.1` and `ge-master-before-11-10.1` on the org.
+- **Org build:** dispatched with publish=true, prerelease=false (Latest, user's choice), compare_with `DroidDeck-Proton-11-9.1`. Run ID and result in the next entry.
+- **Next:** check the org release (tag = built commit, 3 assets, sha512), then delete the superseded personal 11-10.1 prerelease only on the user's say.
+
 ## 2026-10-19
 
 ### 11-10.1: rebased on GE-Proton11-10 and CachyOS 20261014
