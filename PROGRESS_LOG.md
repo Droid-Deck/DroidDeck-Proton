@@ -2,6 +2,21 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-10-23 (2)
+
+### 11-11.1: GE-Proton11-11, CachyOS 20261015, three GE master fixes
+- **Why:** user asked for upstream fixes after 11-10.1 went to the org. GE-Proton11-11 (hotfix: video deadlock/upside-down/heap fixes, vkd3d-proton EAC fix) and CachyOS 20261015 (crypt32 MR 11824). Valve Wine, DXVK, vkd3d-proton and FEX pins unchanged.
+- **Base:** `ge-master` `8f204747` → GE-Proton11-11 `c0c2ee35`, merged into main (no conflicts). Backups `refs/backup/20261023/main-before-11-11.1` (`48bcff61`), `ge-master-before-11-11.1` (`8f204747`).
+- **GE master picks** (user's choice, handheld-relevant): `98efe1cd` Space Marine 2 (ntdll `RtlWaitOnAddress`), `e15b1e15` winewayland OpenVR/OpenXR extensions (DroidDeck VR runs on X11 today, so this only matters with `PROTON_ENABLE_WAYLAND`; the conflict in protonprep was other GE patches' lines, only this patch's lines kept), `bbef7006` lsteamclient 0017 Sony fallback (applies without 0016 AC6, checked on a scratch copy). Not taken: the x86_64-only WoW64 exit fix (`signal_x86_64.c`), Hyprland, RuneScape/HDR, purple launcher, cmd choice, GNOME tray, Star Citizen DLSS.
+- **Wine:** `banner-proton/11.11` `219dddec`, tags `bp-11.11-tier1..6`:
+  - Tier 1: Valve `c53678ab` (same as 11.10).
+  - Tier 2: this repo's protonprep wine section, unmodified, one commit per section (2-1..2-7 + drop configure), 0 failed patches. Diff to `bp-11.10-tier2`: ntdll/sync.c, winedmo (GE 0095–0097), winewayland vulkan.c, wine.inf (AGS revert) only.
+  - Tier 3: 18 carried from 11.10 + CachyOS `45f4a562`/`393bdcf6` crypt32 (MR 11824). Left out: the win32u decoration revert (never carried) and winewayland popup reparenting `d9849606` (conflicts with GE's EM-11 window.c: no `window_rect` etc.).
+  - Tiers 4–6 cherry-picked from 11.10, clean.
+  - **Tier 7 dropped:** GE-Proton11-11's `ge-video-rework/0096` is the same winedmo row order fix (GE #863); cherry-pick conflicted in quartz_transform.c. CI source/binary markers switched to GE's version (`Switching output to %s rows.`).
+- **Built / CI:** see next entry.
+- **Resume:** check Verify wine tier 2 run on this push, then dispatch build publish=true prerelease=true compare_with DroidDeck-Proton-11-10.1.
+
 ## 2026-10-23
 
 ### 11-10.1: device-proven, org brought level, org release
