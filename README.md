@@ -167,6 +167,19 @@ Not taken: the `LC_ALL=C.UTF-8` default (bionic-only; DroidDeck uses glibc).
 </details>
 
 <details>
+<summary><b>Game patch – WoW Forever ARM64EC</b></summary>
+
+**Target:** `WowB-ARM64.exe` (WoW Forever) on DroidDeck — ARM64EC, not plain ARM64.
+
+Single patch: [`patches/game-patches/wow-forever-arm64ec-ntdll.patch`](patches/game-patches/wow-forever-arm64ec-ntdll.patch)
+(ntdll `signal_arm64.c`, `asm.h` syscall stubs, KSDT/TEB dispatch sync, NLS map fallback, map-time
+ntdll dispatcher init). Registered in `patches/protonprep-valve-staging.sh` like other game fixes; applied
+at build time via `banner-proton/apply-deferred-game-patches.sh` after `prep.sh` until it lands in the
+Wine branch tags.
+
+</details>
+
+<details>
 <summary><b>Building</b></summary>
 
 Builds run on GitHub Actions (`ubuntu-24.04-arm`, Valve's `steamrt4` arm64 Proton SDK), like GE's
@@ -180,10 +193,10 @@ aarch64 builds.
 - **Caches** – each group's output is keyed by its sources and skipped when cached; per-group ccache;
   SDK image cache.
 - **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 fixes and the winedmo row order fix present in source and
-  binaries (trace strings); no leftover "Banner-Proton" names.
+  binaries (trace strings); WoW Forever deferred game patch markers after `apply-deferred-game-patches.sh`; no leftover "Banner-Proton" names.
 
-Local builds: follow [docs/README.GE-Proton.md](docs/README.GE-Proton.md), using `banner-proton/prep.sh`
-instead of `patches/protonprep-valve-staging.sh` and
+Local builds: follow [docs/README.GE-Proton.md](docs/README.GE-Proton.md), using `banner-proton/prep.sh`,
+`banner-proton/apply-deferred-game-patches.sh`, instead of `patches/protonprep-valve-staging.sh` and
 `../configure.sh --target-arch=arm64 --build-name=DroidDeck-Proton-<version> --display-name="DroidDeck-Proton <version>"`.
 
 </details>

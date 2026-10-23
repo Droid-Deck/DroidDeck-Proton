@@ -26,7 +26,7 @@ keys() {
     # Inputs shared by every group: the build rules, the source preparation, this CI and the SDK.
     common() {
         git ls-files -s -- Makefile.in make configure.sh patches .github/patches \
-            banner-proton/prep.sh banner-proton/ci.sh .github/workflows/_group.yml
+            banner-proton/prep.sh banner-proton/apply-deferred-game-patches.sh banner-proton/ci.sh .github/workflows/_group.yml
         # The group goals and pack settings, not the rest of the workflow (release notes, checks).
         grep -E '^ +(goals|goals2|pack_exclude|pack_keep|restore):' .github/workflows/build-aarch64.yml
         echo "$img"
