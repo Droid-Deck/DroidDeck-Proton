@@ -14,8 +14,10 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
   - Tier 3: 18 carried from 11.10 + CachyOS `45f4a562`/`393bdcf6` crypt32 (MR 11824). Left out: the win32u decoration revert (never carried) and winewayland popup reparenting `d9849606` (conflicts with GE's EM-11 window.c: no `window_rect` etc.).
   - Tiers 4–6 cherry-picked from 11.10, clean.
   - **Tier 7 dropped:** GE-Proton11-11's `ge-video-rework/0096` is the same winedmo row order fix (GE #863); cherry-pick conflicted in quartz_transform.c. CI source/binary markers switched to GE's version (`Switching output to %s rows.`).
-- **Built / CI:** see next entry.
-- **Resume:** check Verify wine tier 2 run on this push, then dispatch build publish=true prerelease=true compare_with DroidDeck-Proton-11-10.1.
+- **Built / CI:** `Verify wine tier 2` run 39947730838 green (fresh GE run == tier 2). Build run 39947785994 on `0184fc1c` green (wine2/wine3 skipped as for 11-10.1); winedmo row order markers found in source and in the aarch64, i386 and x86_64 `winedmo.dll`. Published as prerelease `DroidDeck-Proton-11-11.1` (tag → `0184fc1c`), tarball 625,575,904 B, sha512 `e8c2bf24…34ad`.
+- **Device:** installed by hand next to 11-10.1 as `compatibilitytools.d/DroidDeck-Proton 11-11.1`: sha512 checked on host and device, 9677/9677 entries, all owned by the app (uid 10195), SELinux labels the same as 11-10.1. DroidDeck's `steam-compatibility` adds the wrapper at the next session start. Not game-tested yet.
+- **Org 11-10.1:** org run 39945045568 green; org release `DroidDeck-Proton-11-10.1` is Latest, tag → `48bcff61`, 3 assets, wine `7e20ceeb`. The personal 11-10.1 prerelease was deleted (user's go); its tag stays.
+- **Next:** user game-tests 11-11.1; then org promotion on the user's go.
 
 ## 2026-10-23
 
