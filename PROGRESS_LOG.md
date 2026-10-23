@@ -19,6 +19,8 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 - **Org 11-10.1:** org run 39945045568 green; org release `DroidDeck-Proton-11-10.1` is Latest, tag → `48bcff61`, 3 assets, wine `7e20ceeb`. The personal 11-10.1 prerelease was deleted (user's go); its tag stays.
 - **Device test (user, 2026-10-23):** DiRT Showdown runs; NINJA GAIDEN SIGMA runs with its FMV cutscenes upright at 60 fps (intro and subtitled cutscene). Both confirmed launched through `DroidDeck-Proton 11-11.1` (process list); no crashes in logcat, no new tombstones. Not tested: a PlayStation controller, Space Marine 2.
 - **Org:** user's go to release 11-11.1 on Droid-Deck/DroidDeck-Proton as Latest. Org `main`/`ge-master` brought level with this repo (fast-forwards, backups `refs/backup/20261023/*-before-11-11.1-org` on the org), build with publish=true, prerelease=false, compare_with `DroidDeck-Proton-11-10.1`.
+- **Org release:** org run 39955941334 green (verify run 39955909737 green) → `DroidDeck-Proton-11-11.1` is Latest on the org, tag → `56265e2e`, 3 assets, wine `219dddec`. Compared with the personal build the user tested: same 9677 files and sizes (only the random name of one cached `.msi` in the default prefix differs), `ntdll.so` and `wineserver` identical, `shell32.dll` differs in 4 bytes (PE build timestamp), as between the 11-10.1 personal and org builds.
+- **Release notes:** org 11-10.1 and 11-11.1 bodies rewritten in the 11-9.1 layout (what's inside, new in this version with upstream issue/PR numbers, tested, credits, pins and hashes). The Sony fallback fix (lsteamclient 0017) is GloriousEggroll's, a follow-up to GE PR #807 (Nickdom1's Armored Core VI actions, not taken).
 
 ## 2026-10-23
 
