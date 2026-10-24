@@ -364,9 +364,6 @@ apply_all_in_dir() {
     apply_patch "../patches/game-patches/ace-lsass-samss-service-stub.patch"
     apply_patch "../patches/game-patches/ace-wineboot-start-samss-service.patch"
 
-    echo "WINE: -GAME FIXES- WoW Forever ARM64EC (WowB-ARM64.exe) ntdll dispatch and loader fixes on DroidDeck"
-    apply_patch "../patches/game-patches/wow-forever-arm64ec-ntdll.patch"
-
 ### END GAME PATCH SECTION ###
 
 ### (2-5) WINE HOTFIX/BACKPORT SECTION ###

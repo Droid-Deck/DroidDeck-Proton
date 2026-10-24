@@ -186,11 +186,11 @@ Single patch (replaces the old six-file `patches/wow-tier8/` series):
 
 [`patches/game-patches/wow-forever-arm64ec-ntdll.patch`](patches/game-patches/wow-forever-arm64ec-ntdll.patch)
 
-Registered in **`patches/protonprep-valve-staging.sh`** (game patch section) like MapleStory / ACE fixes. Because
-**`banner-proton/prep.sh`** skips GE's wine patching block, the patch is applied at build time by
-**`banner-proton/apply-deferred-game-patches.sh`** immediately after `prep.sh` (see
-[`.github/workflows/_group.yml`](.github/workflows/_group.yml)), until it is baked into
-**`The412Banner/proton-wine`** tier tags.
+Stored under **`patches/game-patches/`** like other game fixes, but **not** listed in
+**`patches/protonprep-valve-staging.sh`** yet (so **`banner-proton/verify-tier2.sh`** still matches the
+pinned **`bp-11.11-tier2`** tag). Applied at build time by **`banner-proton/apply-deferred-game-patches.sh`**
+immediately after **`banner-proton/prep.sh`** (see [`.github/workflows/_group.yml`](.github/workflows/_group.yml)).
+Add it to protonprep when the same change is committed on **`The412Banner/proton-wine`** tier tags.
 
 | Area | What it fixes |
 |---|---|
