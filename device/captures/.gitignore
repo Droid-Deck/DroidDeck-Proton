@@ -1,0 +1,5 @@
+# Keep README / RESULTS in git; store bulky tarballs and extracted trees locally.
+*
+!.gitignore
+!README.md
+!RESULTS.md

@@ -6,3 +6,9 @@
 
 /.vagrant/
 /vagrant_share/
+
+# Local device captures (see device/captures/.gitignore)
+/device/captures/*
+!/device/captures/.gitignore
+!/device/captures/README.md
+!/device/captures/RESULTS.md

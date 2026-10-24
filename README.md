@@ -20,9 +20,10 @@ this fork still tracks the older **11-9.1 ARM64EC WoW**–named release line for
 3. Restart Steam and pick **DroidDeck-Proton &lt;version&gt;** as the game's compatibility tool.
 
 On DroidDeck, install the tarball from a **Build DroidDeck-Proton (aarch64)** run on this branch (or an upstream
-release after merge). Point Battle.net / WoW Forever at that compatibility tool; the native client is
-**`WowB-ARM64.exe`**. Use Battle.net **Play** or per-product launch options (e.g. `-d3d11`) as usual — no extra
-launcher scripts are required for this Proton build.
+release after merge). Point Battle.net / WoW at that compatibility tool. Classic Era uses **`WowClassic-arm64.exe`**
+(**`-d3d11`**); Forever uses **`WowB-ARM64.exe`**. Battle.net **Play** is enough for a basic test.
+
+Optional Steam shortcut helpers and ADB log capture: **[`device/`](device/README.md)**.
 
 ## What's inside
 

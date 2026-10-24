@@ -2,6 +2,14 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-10-24 — 11-11.1 ARM64EC WoW patch: Bnet + Classic Era in-world
+
+- **Branch tip:** `5734b89d` (deferred WoW game patch at build + verify-tier2 protonprep alignment) on top of **`faf0d50d`** / **`bb32ae0a`** patch.
+- **Tool on device:** `DroidDeck-Proton 11-11.1 ARM64EC WoW`, prefix **4153382437**, `WowClassic-arm64.exe` **-d3d11**.
+- **Steam:** Bnet Play → Classic Era in-world (`gx.log` Dx11 device create OK).
+- **Non-Steam:** `droiddeck-proton-run --app 4153382437` → Play → Bnet exit (expected) → in-world, playable.
+- **Host workflow:** `device/` (launch script, ADB capture, `device/captures/RESULTS.md`).
+
 ## 2026-10-23 (2)
 
 ### 11-11.1: GE-Proton11-11, CachyOS 20261015, three GE master fixes
