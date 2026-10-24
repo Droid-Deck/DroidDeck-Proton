@@ -14,6 +14,7 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 - **Release:** prerelease `DroidDeck-Proton-11-11.2` (tag → `5aaa70dd`), 3 assets, tarball 625,550,481 B.
 - **Install path for users:** DroidDeck's in-app installer (`ProtonExtras.kt`) only reads `Droid-Deck/DroidDeck-Proton` and skips prereleases, so testers can't get this build from the app; an org release would be offered to everyone.
 - **Staged for the device test:** tarball in `/sdcard/Download/DroidDeck-Proton/`, sha512 `8cc370a5…376b` matches on host and device. Test program `/sdcard/Download/sysinfo-probe/sysinfo-probe.exe` (x64, prints `GetNativeSystemInfo` / `GetSystemInfo` / `IsWow64Process2` and writes `sysinfo-probe.txt`): expected 12 (ARM64) on 11-11.1, 9 (AMD64) on 11-11.2.
+- **Installed on the device** by hand as `compatibilitytools.d/DroidDeck-Proton 11-11.2` (user's go: probe + one regression game, no .NET game): 9677 entries, all owned by the app (uid 10195), SELinux labels the same as 11-11.1 (toybox `chcon --reference` did nothing, labels set explicitly), `ntdll.so`/`wineserver`/`shell32.dll` sha256 match build-info.
 - **Next:** device test (a .NET 6 / MelonLoader 0.7.3 game + a regression game). Org only after device-proven and the user's go.
 
 ## 2026-10-23 (2)
