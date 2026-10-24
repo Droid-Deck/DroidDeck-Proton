@@ -4,13 +4,16 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 
 ## 2026-10-24
 
-### 11-11.2: tier 7, .NET mod loaders on ARM64 (main, CI running)
+### 11-11.2: tier 7, .NET mod loaders on ARM64 (main, CI-green prerelease, NOT device-tested)
 - **Why:** Discord #bug-reports thread 1559868756098940978 (whatsupbros): Drova + MelonLoader 0.6.6/0.7.3 dies with .NET `c000001d` on 11-7.5 and the 10-23 preview; FEX-Emu/FEX#6014, Droid-Deck/DroidDeck#611 (SMAPI). Cause found by utkarshdalal (GameNative/proton-wine#94, merged 10-22): `GetNativeSystemInfo()` returns ARM64 in an x64 ARM64EC process, .NET 6 reports Arm64, MonoMod writes an ARM64 jump over x64 CoreCLR code.
 - **Fix:** upstream Wine `c5a96a0b6c` (Brendan Shanks; in Wine 11.4), proton-wine PR #1 by maxjivi05 (change lines identical to upstream, checked). User's go to merge and build 11-11.2.
 - **Wine:** `banner-proton/11.11` fast-forwarded `219dddec` → `40653419` (PR #1 now merged), tag `bp-11.11-tier7` (annotated; tiers 1–6 are lightweight). Backup `refs/backup/20261024/banner-proton-11.11-before-native-sysinfo` on proton-wine.
 - **Repo:** VERSION 11-11.2, PINS tier tags 1..7, wine submodule → `40653419`, CI source marker for the tier 7 hunk in `dlls/kernelbase/memory.c`, README tiers/pins/credits.
 - **PR author's proof (not ours):** REDMAGIC tablet, 11-11.1 with only `kernelbase.dll` swapped: `GetNativeSystemInfo` 12 → 9 (AMD64), back to 12 with the shipped DLL.
-- **Next:** verify-tier2 + build publish=true prerelease=true compare_with `DroidDeck-Proton-11-11.1` on this repo; then device test (a .NET 6 / MelonLoader 0.7.3 game + a regression game). Org only after device-proven and the user's go.
+- **CI:** `Verify wine tier 2` run 40120875090 green. Build run 40120885224 on `5aaa70dd` green (fex/media/graphics/misc/wine2/wine3 skipped = cached/normal); new source check finds the tier 7 hunk in `dlls/kernelbase/memory.c`; tarball markers all ok, FEX `FEX-2610-30-g741e146`, ntdll exports 291 = 291. Compared with 11-11.1: 9677 = 9677 entries, no size changes, 2383 files differ only in content (sampled diffs are the 6-byte PE header/timestamp kind; `kernelbase.dll` for aarch64/i386/x86_64 among them), 2 ICU DLLs mode 0644 → 0444.
+- **Release:** prerelease `DroidDeck-Proton-11-11.2` (tag → `5aaa70dd`), 3 assets, tarball 625,550,481 B.
+- **Install path for users:** DroidDeck's in-app installer (`ProtonExtras.kt`) only reads `Droid-Deck/DroidDeck-Proton` and skips prereleases, so testers can't get this build from the app; an org release would be offered to everyone.
+- **Next:** device test (a .NET 6 / MelonLoader 0.7.3 game + a regression game). Org only after device-proven and the user's go.
 
 ## 2026-10-23 (2)
 
