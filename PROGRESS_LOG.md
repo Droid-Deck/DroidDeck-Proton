@@ -13,6 +13,7 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 - **CI:** `Verify wine tier 2` run 40120875090 green. Build run 40120885224 on `5aaa70dd` green (fex/media/graphics/misc/wine2/wine3 skipped = cached/normal); new source check finds the tier 7 hunk in `dlls/kernelbase/memory.c`; tarball markers all ok, FEX `FEX-2610-30-g741e146`, ntdll exports 291 = 291. Compared with 11-11.1: 9677 = 9677 entries, no size changes, 2383 files differ only in content (sampled diffs are the 6-byte PE header/timestamp kind; `kernelbase.dll` for aarch64/i386/x86_64 among them), 2 ICU DLLs mode 0644 → 0444.
 - **Release:** prerelease `DroidDeck-Proton-11-11.2` (tag → `5aaa70dd`), 3 assets, tarball 625,550,481 B.
 - **Install path for users:** DroidDeck's in-app installer (`ProtonExtras.kt`) only reads `Droid-Deck/DroidDeck-Proton` and skips prereleases, so testers can't get this build from the app; an org release would be offered to everyone.
+- **Staged for the device test:** tarball in `/sdcard/Download/DroidDeck-Proton/`, sha512 `8cc370a5…376b` matches on host and device. Test program `/sdcard/Download/sysinfo-probe/sysinfo-probe.exe` (x64, prints `GetNativeSystemInfo` / `GetSystemInfo` / `IsWow64Process2` and writes `sysinfo-probe.txt`): expected 12 (ARM64) on 11-11.1, 9 (AMD64) on 11-11.2.
 - **Next:** device test (a .NET 6 / MelonLoader 0.7.3 game + a regression game). Org only after device-proven and the user's go.
 
 ## 2026-10-23 (2)
