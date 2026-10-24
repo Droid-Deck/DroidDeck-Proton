@@ -1,0 +1,14 @@
+---
+description: WoW and Battle.net device work belongs in this repo
+alwaysApply: true
+---
+
+# WoW / Battle.net work
+
+All **World of Warcraft**, **Battle.net on DroidDeck**, device captures, launch scripts, and tier bisect notes for this effort live in **DroidDeck-Proton-WoW-arm64ec** — not WoW-Mobile.
+
+- **Patch / Proton:** branch `wine-tier8-upstream` (11-11.1 + deferred WoW ARM64EC game patch).
+- **Device helpers:** `device/scripts/`, `device/README.md`, results in `device/captures/RESULTS.md`.
+- **Do not** expand WoW-Mobile unless the user explicitly asks; prefer editing this repo.
+
+When capturing logs via ADB, guest commands need an **active** DroidDeck session; avoid copying all of `/tmp/wow-launch`.
