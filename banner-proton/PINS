@@ -9,7 +9,7 @@ CACHYOS_WINE_BRANCH=cachyos_11.0_20261014/main
 CACHYOS_WINE_COMMIT=cd14106e4fc0f96006005b07985e49cc1517e9c0
 WINE_REPO=https://github.com/The412Banner/proton-wine
 WINE_BRANCH=banner-proton/11.11
-WINE_TIER_TAGS="bp-11.11-tier1 bp-11.11-tier2 bp-11.11-tier3 bp-11.11-tier4 bp-11.11-tier5 bp-11.11-tier6"
+WINE_TIER_TAGS="bp-11.11-tier1 bp-11.11-tier2 bp-11.11-tier3 bp-11.11-tier4 bp-11.11-tier5 bp-11.11-tier6 bp-11.11-tier7"
 # Wine patches GE added after tier 2 was made, committed on top of the branch (tags, in order).
 # verify-tier2.sh expects a fresh run of GE's wine section to equal tier 2 plus these.
 # None on banner-proton/11.11: tier 2 was made from this repo's protonprep (GE-Proton11-11 + 98efe1cd, e15b1e15).
@@ -24,4 +24,5 @@ WINE_PROTOCOL_BASE=5130c2882671e75841caa26288669ac5ae14c9b7
 DROIDDECK_ESYNC_PATCH="Droid-Deck/DroidDeck-Components droiddeck-esync/patches/valve-11/0001-droiddeck-esync.patch@780ab619de"
 # Tier 6: Arihany's SD card (noexec, force_anon) and drive-root copy fixes, from proton-wine proton_11.0.
 ARIHANY_FIXES_SOURCE="The412Banner/proton-wine proton_11.0@497c384f"
-# No tier 7 since 11-11.1: GE-Proton11-11 carries the same winedmo row order fix (ge-video-rework/0096).
+# The old tier 7 (winedmo row order) is in GE-Proton11-11 (ge-video-rework/0096), dropped in 11-11.1.
+# Tier 7 since 11-11.2: upstream Wine c5a96a0b6c, GetNativeSystemInfo() reports AMD64 in x64 processes (proton-wine PR #1).

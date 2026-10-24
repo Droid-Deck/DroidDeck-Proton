@@ -17,7 +17,7 @@ running Windows games through ARM64 Proton with FEX.
 ## What's inside
 
 DroidDeck-Proton is GE-Proton (DXVK, vkd3d-proton, FEX, protonfixes, media stack and the `proton`
-script, unchanged) with Wine built in six tiers. Each tier is a tag on the Wine branch, so any one of
+script, unchanged) with Wine built in seven tiers. Each tier is a tag on the Wine branch, so any one of
 them can be bisected or turned off on its own.
 
 | Tier | Contents | Tag |
@@ -28,9 +28,10 @@ them can be bisected or turned off on its own.
 | 4 | Our portable fixes from the Bannerlator layers | `bp-11.11-tier4` |
 | 5 | DroidDeck esync, built in | `bp-11.11-tier5` |
 | 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.11-tier6` |
+| 7 | .NET mod loaders on ARM64 (upstream Wine fix, since 11-11.2) | `bp-11.11-tier7` |
 
-Up to 11-10.1 there was a tier 7 (DirectShow FMVs upside down). GE-Proton11-11 carries the same fix
-(`ge-video-rework/0096`), so it is part of tier 2 now.
+Up to 11-10.1 tier 7 was the DirectShow FMV row order fix. GE-Proton11-11 carries the same fix
+(`ge-video-rework/0096`), so it is part of tier 2 now, and tier 7 is a new fix since 11-11.2.
 
 Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine), branch
 `banner-proton/11.11` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
@@ -38,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.1)</b></summary>
+<summary><b>Pins (11-11.2)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -47,10 +48,11 @@ _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 | Valve Wine `bleeding-edge` (same as GE, 2026-10-16) | `c53678ab22a85f0fad3588dd34f0452a463bd015` |
 | FEX (same as GE: `FEX-2610-30`) | `741e146fdf5a89517e1a67e3c899907cfba6131a` |
 | CachyOS Wine `cachyos_11.0_20261014/main` (release `cachyos-11.0-20261015-slr`) | `cd14106e4fc0f96006005b07985e49cc1517e9c0` |
-| DroidDeck-Proton Wine `banner-proton/11.11` | `219dddec24cbf30aca79f7189073a127134a4fec` |
+| DroidDeck-Proton Wine `banner-proton/11.11` | `406534191c15deab2c47de3dc7b4b7e6af8da028` |
 
 vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
-GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1.
+GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1. 11-11.2 is 11-11.1 plus
+tier 7.
 
 </details>
 
@@ -167,6 +169,20 @@ Not taken: the `LC_ALL=C.UTF-8` default (bionic-only; DroidDeck uses glibc).
 </details>
 
 <details>
+<summary><b>Tier 7 – .NET mod loaders on ARM64</b></summary>
+
+Upstream Wine `c5a96a0b6c` (Brendan Shanks, CodeWeavers; in Wine 11.4), cherry-picked by maxjivi05
+(proton-wine PR #1):
+
+- **kernelbase – `GetNativeSystemInfo()` in x64 processes** (`memory.c`). An x64 process under ARM64EC
+  now gets `PROCESSOR_ARCHITECTURE_AMD64`, as on Windows, instead of ARM64. .NET 6 reported ARM64 from
+  it, so MonoMod (Harmony, SMAPI, MelonLoader 0.7.x) wrote an ARM64 jump into x64 CoreCLR code and the
+  runtime died with `c000001d` (FEX-Emu/FEX#6014, Droid-Deck/DroidDeck#611). Diagnosis by utkarshdalal
+  (GameNative/proton-wine#94), report by whatsupbros.
+
+</details>
+
+<details>
 <summary><b>Building</b></summary>
 
 Builds run on GitHub Actions (`ubuntu-24.04-arm`, Valve's `steamrt4` arm64 Proton SDK), like GE's
@@ -179,7 +195,7 @@ aarch64 builds.
   against an earlier release).
 - **Caches** – each group's output is keyed by its sources and skipped when cached; per-group ccache;
   SDK image cache.
-- **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 fixes and the winedmo row order fix present in source and
+- **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 and 7 fixes and the winedmo row order fix present in source and
   binaries (trace strings); no leftover "Banner-Proton" names.
 
 Local builds: follow [docs/README.GE-Proton.md](docs/README.GE-Proton.md), using `banner-proton/prep.sh`
@@ -195,7 +211,8 @@ instead of `patches/protonprep-valve-staging.sh` and
 [Wine](https://gitlab.winehq.org/wine/wine) and [wine-staging](https://gitlab.winehq.org/wine/wine-staging) developers ·
 [CachyOS](https://github.com/CachyOS/proton-cachyos) · NelloKudo · Etaash Mathamsetty ·
 Elizabeth Figura (esync, fsync, ntsync) · maxjivi05 / DroidDeck (droiddeck-esync) ·
-Arihany and GameNative (SD card fixes) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
+Arihany and GameNative (SD card fixes) · Brendan Shanks, utkarshdalal, whatsupbros
+(.NET fix) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
 patch author named in the commit history.
 
 ## License

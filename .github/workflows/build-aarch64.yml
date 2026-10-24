@@ -218,7 +218,7 @@ jobs:
           tools/make_requests
           git diff --stat --exit-code -- $files
           echo "protocol unchanged since $WINE_PROTOCOL_BASE"
-      - name: Tier 6 fixes and the winedmo row order fix in the wine source
+      - name: Tier 6 and 7 fixes and the winedmo row order fix in the wine source
         run: |
           # The tier 6 fixes have no getenv string of their own; check the code itself so a rebase
           # that drops a hunk fails here rather than shipping a build without it.
@@ -245,6 +245,8 @@ jobs:
           has $q "if (bottom_up == filter->output_bottom_up)"
           has $q "Switching output to %s rows."
           has $q "winedmo_transform_set_output_format(filter->winedmo_transform,"
+          # Tier 7: GetNativeSystemInfo() takes the GetSystemInfo() path in a non-WoW64 (x64 on ARM64EC) process.
+          has dlls/kernelbase/memory.c "if (!is_wow64 || native_machine != IMAGE_FILE_MACHINE_AMD64)"
           exit $fail
 
   verify:
@@ -279,7 +281,7 @@ jobs:
           if [ -n "${DROIDDECK_ESYNC_PATCH:-}" ]; then
             need "$T/files/bin-arm64/wineserver" "droiddeck-esync: up and running"
           fi
-          # Tier 6: the trace lines that sit inside each fix (see the "Tier 6 fixes and the winedmo row order fix in the wine
+          # Tier 6: the trace lines that sit inside each fix (see the "Tier 6 and 7 fixes and the winedmo row order fix in the wine
           # source" check for the code itself).
           need "$T/files/lib/wine/aarch64-unix/ntdll.so" "force_anon: reading %p-%p into anonymous memory"
           shell32s=$(cd "$T" && find files -name shell32.dll | LC_ALL=C sort)
