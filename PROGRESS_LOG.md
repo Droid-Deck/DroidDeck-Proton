@@ -17,7 +17,8 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 - **Installed on the device** by hand as `compatibilitytools.d/DroidDeck-Proton 11-11.2` (user's go: probe + one regression game, no .NET game): 9677 entries, all owned by the app (uid 10195), SELinux labels the same as 11-11.1 (toybox `chcon --reference` did nothing, labels set explicitly), `ntdll.so`/`wineserver`/`shell32.dll` sha256 match build-info.
 - **Device test, probe (2026-10-24, same non-Steam shortcut and prefix):** 11-11.1 → `GetNativeSystemInfo` 12 (ARM64), NOT FIXED; 11-11.2 → 9 (AMD64), FIXED. `GetSystemInfo` 9 and `IsWow64Process2` 0x0/0xaa64 on both. Session log confirms protonfixes ran on `DroidDeck-Proton-11-11.1` then `DroidDeck-Proton-11-11.2`. No crashes in logcat, no new tombstones. No .NET/MelonLoader game tested (user's choice).
 - **Device test, regression:** DiRT Showdown on 11-11.2 starts (process chain through `DroidDeck-Proton 11-11.2/droiddeck-proton-wrap`, its `ntdll.so` loaded, splash/loading screen at ~200 fps, ~1.07 GB RSS); no crashes in logcat, no new tombstones. Only the loading screen was captured.
-- **Next:** org release only on the user's go; the Discord reply is drafted, not posted.
+- **Org:** user's go (2026-10-24) to release 11-11.2 on Droid-Deck/DroidDeck-Proton as Latest. Org `main` fast-forwarded to this repo (only PROGRESS_LOG differs from the tested `5aaa70dd`), `ge-master` already level (`c0c2ee35`); backup `refs/backup/20261024/main-before-11-11.2-org` on the org. Build with publish=true, prerelease=false, compare_with `DroidDeck-Proton-11-11.1`. Run ID and result in the next entry.
+- **Discord reply:** drafted, not posted.
 - **Earlier plan:** device test (a .NET 6 / MelonLoader 0.7.3 game + a regression game). Org only after device-proven and the user's go.
 
 ## 2026-10-23 (2)
