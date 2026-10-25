@@ -2,6 +2,16 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-10-25
+
+### 11-11.6: winex11 offscreen-check cache for DroidDeck's Performance mode (main, Latest, device-tested)
+- **Why:** DroidDeck's close-the-gap work (DroidDeck PR #1563, Performance mode, merged 10-25). Each present made `client_surface_update_offscreen()` call `needs_offscreen_rendering()` twice, and each call asks wineserver for the window's relatives; at high frame rates the game spent much of `vkQueuePresentKHR` waiting on wineserver.
+- **Fix:** proton-wine `ff9db6f6` + `bab12909`: the check is reused for `WINE_OFFSCREEN_CHECK_MS` milliseconds; unset or 0 keeps the per-call check. DroidDeck sets 100 with Performance mode on and 0 otherwise; older app versions never set it.
+- **Wine:** `banner-proton/11.11` fast-forwarded `40653419` → `bab12909` (backup `refs/backup/20261025/banner-proton-11.11-before-offscreen-cache`).
+- **Repo:** VERSION 11-11.6, wine submodule → `bab12909`, README pins/notes. Built first on The412Banner/DroidDeck-Proton `release/11-11.6` (run 40231819046, not published), then the org branch (run 40236905066, compare with 11-11.5: only `winex11.so` changed size, +80 B; ntdll exports unchanged, 291).
+- **Device test (AYANEO Pocket FIT, hand-installed `DroidDeck-Proton 11-11.6`, DroidDeck Preview with Performance mode, 11-11.5 and 11-11.6 alternated, cooled):** D3D11 2725/2630 → 3495/3313 fps (+27 %), D3D9 2451/2089 → 3209/3237 (+42 %); Performance mode off D3D11 ~1083 (unchanged); DiRT Showdown 93.0 vs 89.7 (one run each, normal spread, GPU-bound); no FATAL. Session log `droiddeck-esync: DroidDeck-Proton 11-11.6` confirmed the build in use.
+- **Release:** user's go → org `main` fast-forwarded `0b077896` → `89226ed6` (backup `refs/backup/20261025/main-before-11-11.6`), build run 40238848757 green → `DroidDeck-Proton-11-11.6` is Latest, tag → `89226ed6`, 3 assets. Release notes in the 11-11.2 style; 11-11.3, 11-11.4 and 11-11.5 notes rewritten the same way (PRs #3, #4, #5).
+
 ## 2026-10-24
 
 ### 11-11.2: tier 7, .NET mod loaders on ARM64 (main, CI-green prerelease, NOT device-tested)
