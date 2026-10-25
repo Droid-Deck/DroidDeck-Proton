@@ -8,3 +8,4 @@ apply() {
   patch -Np1 --forward < "$p"
 }
 apply "$root/patches/game-patches/wow-forever-arm64ec-ntdll.patch"
+apply "$root/patches/wine-hotfixes/pending/server-android-shared-storage-owner.patch"
