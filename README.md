@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.2)</b></summary>
+<summary><b>Pins (11-11.5)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -52,7 +52,8 @@ _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
 GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1. 11-11.2 is 11-11.1 plus
-tier 7.
+tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch. 11-11.4 is 11-11.3 plus Android shared-storage file ownership.
+11-11.5 is 11-11.4 plus the 32-bit lost wake fix (Battle.net freezes).
 
 </details>
 
@@ -169,6 +170,27 @@ Not taken: the `LC_ALL=C.UTF-8` default (bionic-only; DroidDeck uses glibc).
 </details>
 
 <details>
+<summary><b>Game patch – WoW Forever ARM64EC</b></summary>
+
+Deferred build-time patch for **`WowB-ARM64.exe`** (ARM64EC) on aarch64 — not committed in the `wine` submodule:
+
+[`patches/game-patches/wow-forever-arm64ec-ntdll.patch`](patches/game-patches/wow-forever-arm64ec-ntdll.patch)
+
+Applied after **`banner-proton/prep.sh`** by **`banner-proton/apply-deferred-game-patches.sh`**
+([`.github/workflows/_group.yml`](.github/workflows/_group.yml)). Omitted from **`patches/protonprep-valve-staging.sh`**
+until the same change is tagged on **`The412Banner/proton-wine`**.
+
+| Area | What it fixes |
+|---|---|
+| `signal_arm64.c` | Zero `CONTEXT` before `save_context` (stale debug regs → intermittent **Game Initialization Failed: I**) |
+| `asm.h` | TEB → KSDT syscall stubs; ARM64EC fallback to `__wine_syscall_dispatcher` when TEB slots are empty |
+| `syscall.c` / `thread.c` | Publish dispatcher in KSDT; `ntdll_arm64ec_sync_syscall_dispatch()` on EC thread start / after `ChpeV2` |
+| `env.c` | NLS section map fallback when section maps fail |
+| `virtual.c` | Map-time init of `__wine_syscall_dispatcher` for manually mapped ntdll SEC_IMAGE views |
+
+</details>
+
+<details>
 <summary><b>Tier 7 – .NET mod loaders on ARM64</b></summary>
 
 Upstream Wine `c5a96a0b6c` (Brendan Shanks, CodeWeavers; in Wine 11.4), cherry-picked by maxjivi05
@@ -196,7 +218,7 @@ aarch64 builds.
 - **Caches** – each group's output is keyed by its sources and skipped when cached; per-group ccache;
   SDK image cache.
 - **CI guards** – Wine protocol and ntdll exports unchanged; tier 6 and 7 fixes and the winedmo row order fix present in source and
-  binaries (trace strings); no leftover "Banner-Proton" names.
+  binaries (trace strings); WoW Forever deferred patch markers after `apply-deferred-game-patches.sh`; no leftover "Banner-Proton" names.
 
 Local builds: follow [docs/README.GE-Proton.md](docs/README.GE-Proton.md), using `banner-proton/prep.sh`
 instead of `patches/protonprep-valve-staging.sh` and
@@ -212,7 +234,7 @@ instead of `patches/protonprep-valve-staging.sh` and
 [CachyOS](https://github.com/CachyOS/proton-cachyos) · NelloKudo · Etaash Mathamsetty ·
 Elizabeth Figura (esync, fsync, ntsync) · maxjivi05 / DroidDeck (droiddeck-esync) ·
 Arihany and GameNative (SD card fixes) · Brendan Shanks, utkarshdalal, whatsupbros
-(.NET fix) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
+(.NET fix) · arusiasotto (WoW ARM64EC fix) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
 patch author named in the commit history.
 
 ## License

@@ -248,6 +248,24 @@ jobs:
           # Tier 7: GetNativeSystemInfo() takes the GetSystemInfo() path in a non-WoW64 (x64 on ARM64EC) process.
           has dlls/kernelbase/memory.c "if (!is_wow64 || native_machine != IMAGE_FILE_MACHINE_AMD64)"
           exit $fail
+      - name: WoW Forever deferred game patch in wine source
+        run: |
+          banner-proton/apply-deferred-game-patches.sh
+          cd wine
+          fail=0
+          has() { local n; n=$(grep -cF -- "$2" "$1" || true); if [ "$n" -ge "${3:-1}" ]; then echo "ok: $1 has \"$2\" ($n)"; else echo "MISSING in $1: \"$2\" (found $n, want ${3:-1})"; fail=1; fi; }
+          has dlls/ntdll/unix/signal_arm64.c "memset( &context, 0, sizeof(context) );"
+          has dlls/ntdll/unix/signal_arm64.c "memset( &ctx, 0, sizeof(ctx) );"
+          has include/wine/asm.h "ldr x16, [x18, #0x370]"
+          has include/wine/asm.h "ldr x16, [x16, #8]"
+          has server/file.c "security_unix_uid_to_sid( file_sd_owner( unix_fd, &st ) )"
+          has dlls/ntdll/sync.c "ret = wait_for_wake( &entry, timeout );"
+          has include/wine/asm.h "__ASM_NAME(\"__wine_syscall_dispatcher\")"
+          has dlls/ntdll/unix/syscall.c "(ULONG_PTR *)__wine_syscall_dispatcher"
+          has dlls/ntdll/unix/syscall.c "ntdll_arm64ec_sync_syscall_dispatch"
+          has dlls/ntdll/unix/env.c "map_nls_file_as_view"
+          has dlls/ntdll/unix/virtual.c "map_image_init_ntdll_dispatchers"
+          exit $fail
 
   verify:
     name: Verify tarball
