@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.4)</b></summary>
+<summary><b>Pins (11-11.5)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -53,6 +53,7 @@ _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
 GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1. 11-11.2 is 11-11.1 plus
 tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch. 11-11.4 is 11-11.3 plus Android shared-storage file ownership.
+11-11.5 is 11-11.4 plus the 32-bit lost wake fix (Battle.net freezes).
 
 </details>
 

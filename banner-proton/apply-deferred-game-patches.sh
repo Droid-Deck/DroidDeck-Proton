@@ -9,3 +9,4 @@ apply() {
 }
 apply "$root/patches/game-patches/wow-forever-arm64ec-ntdll.patch"
 apply "$root/patches/wine-hotfixes/pending/server-android-shared-storage-owner.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-i386-recover-lost-wake-on-address.patch"
