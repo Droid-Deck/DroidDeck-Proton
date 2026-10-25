@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.5)</b></summary>
+<summary><b>Pins (11-11.6)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -48,12 +48,14 @@ _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 | Valve Wine `bleeding-edge` (same as GE, 2026-10-16) | `c53678ab22a85f0fad3588dd34f0452a463bd015` |
 | FEX (same as GE: `FEX-2610-30`) | `741e146fdf5a89517e1a67e3c899907cfba6131a` |
 | CachyOS Wine `cachyos_11.0_20261014/main` (release `cachyos-11.0-20261015-slr`) | `cd14106e4fc0f96006005b07985e49cc1517e9c0` |
-| DroidDeck-Proton Wine `banner-proton/11.11` | `406534191c15deab2c47de3dc7b4b7e6af8da028` |
+| DroidDeck-Proton Wine `banner-proton/11.11` (+ the winex11 offscreen-check cache) | `bab12909e99bdab9fc4820d12cd0ce1f23c6cd77` |
 
 vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
 GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1. 11-11.2 is 11-11.1 plus
 tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch. 11-11.4 is 11-11.3 plus Android shared-storage file ownership.
-11-11.5 is 11-11.4 plus the 32-bit lost wake fix (Battle.net freezes).
+11-11.5 is 11-11.4 plus the 32-bit lost wake fix (Battle.net freezes). 11-11.6 is 11-11.5 plus the winex11
+offscreen-check cache for DroidDeck's Performance mode: off unless `WINE_OFFSCREEN_CHECK_MS` is set (DroidDeck sets
+100 only with Performance mode on), so the present path does not ask wineserver for the window's relatives twice a frame.
 
 </details>
 
