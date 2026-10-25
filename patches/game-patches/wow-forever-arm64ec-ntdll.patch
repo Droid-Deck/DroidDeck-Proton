@@ -342,9 +342,9 @@ index 4b0530e2f3b..db9c7855e04 100644
 +            ULONG_PTR literal, cell;
 +
 +            if (insn[1] != mov_x9_x30) continue;
-+            if ((insn[0] & 0xff000000) != 0xd2000000) continue; /* mov x8, #imm */
-+            if ((insn[2] & 0xff000000) != 0x58000000) continue; /* ldr x16, label */
-+            if (insn[3] != 0xf9400210) continue; /* ldr x16, [x16] */
++            if ((insn[0] & 0xff000000) != 0xd2000000) continue;
++            if ((insn[2] & 0xff000000) != 0x58000000) continue;
++            if (insn[3] != 0xf9400210) continue;
 +
 +            literal = (ULONG_PTR)(insn + 2) + map_image_ldr_literal_offset( insn[2] );
 +            if (literal + sizeof(ULONG_PTR) > (ULONG_PTR)base + total_size) continue;
@@ -411,7 +411,7 @@ index 4b0530e2f3b..db9c7855e04 100644
 +    map_image_patch_wine_syscall_stub_slots( view, base, nt, total_size, dispatcher );
 +}
 +
-+#endif /* __aarch64__ */
++#endif
  
  /***********************************************************************
   *           map_image_into_view
