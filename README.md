@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.2)</b></summary>
+<summary><b>Pins (11-11.3)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -52,7 +52,7 @@ _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
 GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1. 11-11.2 is 11-11.1 plus
-tier 7.
+tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch.
 
 </details>
 
@@ -233,7 +233,7 @@ instead of `patches/protonprep-valve-staging.sh` and
 [CachyOS](https://github.com/CachyOS/proton-cachyos) · NelloKudo · Etaash Mathamsetty ·
 Elizabeth Figura (esync, fsync, ntsync) · maxjivi05 / DroidDeck (droiddeck-esync) ·
 Arihany and GameNative (SD card fixes) · Brendan Shanks, utkarshdalal, whatsupbros
-(.NET fix) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
+(.NET fix) · arusiasotto (WoW ARM64EC fix) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
 patch author named in the commit history.
 
 ## License
