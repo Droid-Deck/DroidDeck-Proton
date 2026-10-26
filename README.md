@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.7)</b></summary>
+<summary><b>Pins (11-11.8)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -57,6 +57,8 @@ tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch. 11-11.4 is 11-11.3 p
 offscreen-check cache for DroidDeck's Performance mode: off unless `WINE_OFFSCREEN_CHECK_MS` is set (DroidDeck sets
 100 only with Performance mode on), so the present path does not ask wineserver for the window's relatives twice a frame.
 11-11.7 is 11-11.6 plus Wine's own DLLs no longer reported read-only (MapleStory copies ws2_32.dll and crashed).
+11-11.8 is 11-11.7 plus Android's shared storage treated as case-insensitive, so creating files in a large folder there
+no longer lists the whole folder each time (Battle.net installs into a Games folder slowed to about 100 KB/s).
 
 </details>
 
