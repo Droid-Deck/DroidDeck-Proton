@@ -237,7 +237,8 @@ instead of `patches/protonprep-valve-staging.sh` and
 [CachyOS](https://github.com/CachyOS/proton-cachyos) · NelloKudo · Etaash Mathamsetty ·
 Elizabeth Figura (esync, fsync, ntsync) · maxjivi05 / DroidDeck (droiddeck-esync) ·
 Arihany and GameNative (SD card fixes) · Brendan Shanks, utkarshdalal, whatsupbros
-(.NET fix) · arusiasotto (WoW ARM64EC fix) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
+(.NET fix) · arusiasotto (WoW ARM64EC fix) · oldschoola
+([linux_maplestory](https://github.com/oldschoola/linux_maplestory), MapleStory research) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
 patch author named in the commit history.
 
 ## License
