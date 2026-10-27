@@ -1,0 +1,346 @@
+From 25d7fd0da4462ca9d03ac20537b29feb5841862d Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Wed, 7 Oct 2026 20:19:53 +0000
+Subject: [PATCH 09/12] Windows: stop the compiler at inaccessible pages,
+ restart it instead of dispatching its faults
+
+D2R under mtrack freezes with every game thread idle and the GPU at 0%.
+The freeze is a deadlock on CodeInvalidationMutex, reached like this:
+
+1. CompileBlock holds the mutex shared and reads guest code through the
+   decoder (and, with anon caching, the disk cache lookup's prefix decode
+   and extents hash). The only guard on those reads is the executable
+   interval list, which covers D2R's whole decrypted image as one range.
+   Pages the protector has not decrypted yet are PAGE_NOACCESS inside it,
+   so the read faults in FEX's own code.
+2. ResetToConsistentState sees a fault that is neither JIT nor dispatcher
+   code and passes it through to the guest. Before that it takes
+   ThreadCreationMutex, which another thread may hold while it waits for
+   the unique lock in HandleRWXAccessViolation (every SMC trap under
+   mtrack). That is one deadlock. If it gets past that, the protector's
+   handler re-enters the JIT on the same thread; WritePriorityMutex is
+   non-recursive and parks a new reader whenever a writer is queued. That
+   is the other. Either way nobody moves again.
+
+SMC checks `none` sidesteps both because it never queues a writer, which is
+why the hour-long run with it was clean, but it also stops FEX noticing
+code changes.
+
+Two changes:
+
+- QueryExecutableRange asks the OS about the page and clamps the interval
+  answer to the region that is actually readable right now (not committed,
+  PAGE_NOACCESS or PAGE_GUARD ends the range). The decoder then stops a
+  block in front of such a page and execution reaches it through a NoExec
+  stub, which raises the fault the protector expects from JIT code, outside
+  the compiler. The decoder re-queries once per block so a protection flip
+  that never notified FEX is seen within one compile.
+- If a guest read in the compiler still faults (a page flipped between the
+  query and the read), the exception handler no longer dispatches it. It
+  records the page, which the range query then reports as non-executable
+  for the rest of that compile, and resumes at a restart point just after
+  the lock is taken, using the same jump-buffer mechanism the JIT guard
+  page already uses. Bounded to 64 restarts per block, after which the old
+  behaviour applies. The check runs before ThreadCreationMutex is taken.
+
+Both paths log, rate limited, as [xrange] and [compilefault] with
+FEX_SILENTLOG=0. Built as 2610-d2rfix27.
+
+---
+ FEXCore/Source/Interface/Core/Core.cpp        | 34 ++++++++++
+ FEXCore/Source/Interface/Core/Frontend.cpp    |  5 ++
+ .../FEXCore/Debug/InternalThreadState.h       | 13 ++++
+ Source/Windows/ARM64EC/Module.cpp             | 63 ++++++++++++++++++-
+ Source/Windows/Common/InvalidationTracker.cpp | 53 +++++++++++++---
+ 5 files changed, 160 insertions(+), 8 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index 63280a42a..b11fae62d 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -848,6 +848,24 @@ ContextImpl::CompileCodeResult ContextImpl::CompileCode(FEXCore::Core::InternalT
+   };
+ }
+ 
++namespace {
++// Marks the window in which a guest read fault must restart the compiler instead of reaching the guest.
++// See InternalThreadState::CompileDepth.
++struct CompileDepthScope {
++  FEXCore::Core::InternalThreadState* Thread;
++  explicit CompileDepthScope(FEXCore::Core::InternalThreadState* Thread, uint64_t GuestRIP)
++    : Thread {Thread} {
++    Thread->CompileDepth++;
++    Thread->CompileEntryRIP = GuestRIP;
++    Thread->CompileFaultPage = 0;
++    Thread->CompileRestartCount = 0;
++  }
++  ~CompileDepthScope() {
++    Thread->CompileDepth--;
++  }
++};
++} // namespace
++
+ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_t GuestRIP, uint64_t MaxInst) {
+   if constexpr (BLOCK_DEBUGGING) {
+     // Block debugging logic is hand-written and needs to be handled with care.
+@@ -875,6 +893,16 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+     return HostCode;
+   }
+ 
++  CompileDepthScope DepthScope {Thread, GuestRIP};
++  // Restart point for guest read faults taken inside the compiler. The frontend's exception handler lands here
++  // (with a non-zero value) after recording the faulting page in Thread->CompileFaultPage; the executable range
++  // query then reports that page as non-executable, so the decoder ends the block in front of it and execution
++  // reaches the page through a NoExec stub, which raises the fault the guest's handler expects. Nothing below
++  // this point holds a lock while reading guest memory, so abandoning those frames is safe.
++  if (FEXCore::UncheckedLongJump::SetJump(Thread->CompileRestartJump)) {
++    Thread->FrontendDecoder->ResetExecutableRangeCache();
++  }
++
+   Thread->FrontendDecoder->SetupDecodeInstructionsAtEntry(Thread, GuestRIP, MaxInst);
+ 
+   std::optional<ExecutableFileSectionInfo> Region = SyscallHandler->LookupExecutableFileSection(Thread, GuestRIP);
+@@ -1032,6 +1060,12 @@ uintptr_t ContextImpl::CompileSingleStep(FEXCore::Core::CpuStateFrame* Frame, ui
+   // Invalidate might take a unique lock on this, to guarantee that during invalidation no code gets compiled
+   auto lk = GuardSignalDeferringSection<std::shared_lock>(CodeInvalidationMutex, Thread);
+ 
++  CompileDepthScope DepthScope {Thread, GuestRIP};
++  // See CompileBlock.
++  if (FEXCore::UncheckedLongJump::SetJump(Thread->CompileRestartJump)) {
++    Thread->FrontendDecoder->ResetExecutableRangeCache();
++  }
++
+   Thread->FrontendDecoder->SetupDecodeInstructionsAtEntry(Thread, GuestRIP, 1);
+   auto [CompiledCode, DebugData, StartAddr, Length, _] = CompileCode(Thread, GuestRIP, 1);
+   auto CodePtr = CompiledCode.EntryPoints[GuestRIP];
+diff --git a/FEXCore/Source/Interface/Core/Frontend.cpp b/FEXCore/Source/Interface/Core/Frontend.cpp
+index 31d647a38..f51fe4997 100644
+--- a/FEXCore/Source/Interface/Core/Frontend.cpp
++++ b/FEXCore/Source/Interface/Core/Frontend.cpp
+@@ -1765,6 +1765,11 @@ void Decoder::SetupDecodeInstructionsAtEntry(FEXCore::Core::InternalThreadState*
+ 
+   TotalInstructions = 0;
+ 
++  // Re-query the executable range for every block. The frontend may clamp the answer to what the OS reports
++  // as accessible right now (a decrypt-on-demand protector flips pages between no-access and executable at
++  // runtime), and that can change between blocks without any invalidation reaching this decoder.
++  ResetExecutableRangeCache();
++
+   SectionMinAddress = 0;
+   SectionMaxAddress = ~0ULL;
+   Relocations = nullptr;
+diff --git a/FEXCore/include/FEXCore/Debug/InternalThreadState.h b/FEXCore/include/FEXCore/Debug/InternalThreadState.h
+index 42feabb1c..7d6cb2018 100644
+--- a/FEXCore/include/FEXCore/Debug/InternalThreadState.h
++++ b/FEXCore/include/FEXCore/Debug/InternalThreadState.h
+@@ -118,6 +118,19 @@ struct alignas(FEXCore::Utils::FEX_PAGE_SIZE) InternalThreadState : public FEXCo
+   uint64_t JITGuardOverflowArgument {};
+   FEXCore::UncheckedLongJump::JumpBuf RestartJump;
+ 
++  // Compiler fault recovery (see ContextImpl::CompileBlock).
++  // CompileDepth is non-zero while this thread is inside CompileBlock/CompileSingleStep, i.e. while it holds
++  // CodeInvalidationMutex shared and the frontend decoder's state is live. A guest memory read that faults in
++  // that window (the decoder or the disk cache lookup touching a page a protector keeps inaccessible) must not
++  // be dispatched to the guest: the guest handler would re-enter the compiler on this thread and either deadlock
++  // on the non-recursive mutex or trample the live decoder state. The frontend instead records the faulting
++  // page and resumes at CompileRestartJump, which recompiles with that page treated as non-executable.
++  uint32_t CompileDepth {};
++  uint32_t CompileRestartCount {};
++  uint64_t CompileEntryRIP {};
++  uint64_t CompileFaultPage {};
++  FEXCore::UncheckedLongJump::JumpBuf CompileRestartJump;
++
+   // BaseFrameState should always be at the end, directly before the interrupt fault page
+   FEXCore::Core::CpuStateFrame BaseFrameState {};
+ 
+diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
+index 8f6eef906..0e68b5e69 100644
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -50,6 +50,7 @@ $end_info$
+ #include "BTInterface.h"
+ #include "Windows/Common/SHMStats.h"
+ 
++#include <atomic>
+ #include <cstdint>
+ #include <cstdio>
+ #include <type_traits>
+@@ -696,6 +697,42 @@ static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore:
+   ERROR_AND_DIE_FMT("This should always noreturn");
+ }
+ 
++// A guest memory read inside the compiler faulted: the decoder or the disk cache lookup touched a page that is
++// inaccessible right now (a decrypt-on-demand protector keeps undecrypted pages at PAGE_NOACCESS), on a thread
++// that holds CodeInvalidationMutex shared. Letting that exception reach the guest is fatal either way: the
++// protector's handler re-enters the JIT on this thread, which blocks on the non-recursive mutex as soon as any
++// other thread has a write-fault invalidation queued (every SMC trap under mtrack), and its compile would
++// trample the decoder state of the compile it interrupted. Real hardware never pre-reads code, so the right
++// outcome is for the block to end in front of that page. Record the page, which the executable range query
++// below then reports as non-executable, and resume at the compiler's restart point.
++static bool RestartCompileOnFault(FEXCore::Core::InternalThreadState* Thread, uint64_t FaultAddress, uint64_t AccessType,
++                                  ARM64_NT_CONTEXT& Context) {
++  static constexpr uint32_t MaxRestarts = 64;
++  static std::atomic<uint64_t> FaultCount {};
++
++  // The compiler only ever reads guest memory. A write or an execute fault here is something else.
++  if (AccessType != 0) {
++    return false;
++  }
++
++  const auto Count = FaultCount.fetch_add(1);
++  if (Thread->CompileRestartCount >= MaxRestarts) {
++    LogMan::Msg::EFmt("[compilefault] giving up after {} restarts: fault={:X} block={:X} pc={:X}", Thread->CompileRestartCount,
++                      FaultAddress, Thread->CompileEntryRIP, Context.Pc);
++    return false;
++  }
++
++  Thread->CompileRestartCount++;
++  Thread->CompileFaultPage = FaultAddress & FEXCore::Utils::FEX_PAGE_MASK;
++  if (Count < 32 || (Count & 255) == 0) {
++    LogMan::Msg::IFmt("[compilefault] fault={:X} block={:X} pc={:X} depth={} restart={} (#{})", FaultAddress, Thread->CompileEntryRIP,
++                      Context.Pc, Thread->CompileDepth, Thread->CompileRestartCount, Count);
++  }
++
++  FEXCore::UncheckedLongJump::ManuallyLoadJumpBuf(Thread->CompileRestartJump, 1, Context.X, reinterpret_cast<__uint128_t*>(Context.V), &Context.Pc);
++  return true;
++}
++
+ class ECSyscallHandler : public FEXCore::HLE::SyscallHandler, public FEXCore::Allocator::FEXAllocOperators {
+ public:
+   ECSyscallHandler() = default;
+@@ -739,7 +776,24 @@ public:
+   }
+ 
+   FEXCore::HLE::ExecutableRangeInfo QueryGuestExecutableRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Address) override {
+-    return InvalidationTracker->QueryExecutableRange(Address);
++    auto Range = InvalidationTracker->QueryExecutableRange(Address);
++
++    // A compile restarted by RestartCompileOnFault must not read the page that faulted again, whatever the
++    // tracker or the OS say about it now: the fault is the ground truth for this compile.
++    const auto FaultPage = Thread->CompileFaultPage;
++    if (Range.Size && FaultPage) {
++      const auto FaultPageEnd = FaultPage + FEXCore::Utils::FEX_PAGE_SIZE;
++      const auto End = Range.Base + Range.Size;
++      if (Address >= FaultPage && Address < FaultPageEnd) {
++        return {};
++      } else if (Address < FaultPage && End > FaultPage) {
++        Range.Size = FaultPage - Range.Base;
++      } else if (Address >= FaultPageEnd && Range.Base < FaultPageEnd) {
++        Range.Size = End - FaultPageEnd;
++        Range.Base = FaultPageEnd;
++      }
++    }
++    return Range;
+   }
+ 
+   void PreCompile() override {
+@@ -890,6 +944,13 @@ bool ResetToConsistentStateImpl(const ThreadCPUArea CPUArea, EXCEPTION_RECORD* E
+       return true;
+     }
+ 
++    // Must come before ThreadCreationMutex is taken: a thread that holds that mutex while it waits for the code
++    // invalidation lock (HandleRWXAccessViolation below) would otherwise deadlock against this compiling thread.
++    if (Thread->CompileDepth && !CTX->IsAddressInCodeBuffer(Thread, NativeContext->Pc) && !IsDispatcherAddress(NativeContext->Pc) &&
++        Exception::RestartCompileOnFault(Thread, FaultAddress, Exception->ExceptionInformation[0], *NativeContext)) {
++      return true;
++    }
++
+     std::scoped_lock Lock(ThreadCreationMutex);
+     if (InvalidationTracker && InvalidationTracker->HandleRWXAccessViolation(Thread, NativeContext->Pc, FaultAddress)) {
+       FEXCORE_PROFILE_INSTANT_INCREMENT(Thread, AccumulatedSMCCount, 1);
+diff --git a/Source/Windows/Common/InvalidationTracker.cpp b/Source/Windows/Common/InvalidationTracker.cpp
+index f093e3c0f..b9cfb25ff 100644
+--- a/Source/Windows/Common/InvalidationTracker.cpp
++++ b/Source/Windows/Common/InvalidationTracker.cpp
+@@ -10,6 +10,9 @@
+ #include <windef.h>
+ #include <winternl.h>
+ 
++#include <algorithm>
++#include <atomic>
++
+ namespace FEX::Windows {
+ InvalidationTracker::InvalidationTracker(FEXCore::Context::Context& CTX, const std::unordered_map<DWORD, FEXCore::Core::InternalThreadState*>& Threads)
+   : CTX {CTX}
+@@ -248,7 +251,48 @@ bool InvalidationTracker::BeginUntrackedWriteLocked(uint64_t Address, uint64_t S
+   return ProtectRWXIntervalsInternal(Address, Size, true);
+ }
+ 
++// Clamps an interval-list answer to the OS region containing Address. The interval lists describe what was
++// mapped or protected as executable at notification time, at region granularity; they say nothing about whether
++// a page can be read right now. A decrypt-on-demand protector keeps the pages it has not yet decrypted at
++// PAGE_NOACCESS inside a region the lists consider executable (D2R's whole decrypted image is one such interval),
++// and it may flip protections through paths that never notify FEX. The decoder and the disk cache lookup read
++// guest memory under the compilation lock based on this answer, so an inaccessible page must end the range:
++// the block then stops in front of it and execution reaches the page through a NoExec stub, which raises the
++// fault the protector's handler expects, outside the compiler.
++static FEXCore::HLE::ExecutableRangeInfo ClampToAccessible(FEXCore::HLE::ExecutableRangeInfo Result, uint64_t Address,
++                                                           const MEMORY_BASIC_INFORMATION& Info) {
++  if (!Result.Size) {
++    return Result;
++  }
++
++  static std::atomic<uint64_t> ClampCount {};
++
++  const bool Accessible = Info.State == MEM_COMMIT && ProtIsReadable(Info.Protect) && !(Info.Protect & PAGE_GUARD);
++  if (!Accessible) {
++    const auto Count = ClampCount.fetch_add(1);
++    if (Count < 32 || (Count & 1023) == 0) {
++      LogMan::Msg::IFmt("[xrange] {:X} is tracked executable ({:X}-{:X}) but not readable: state={:X} prot={:X} (#{})", Address,
++                        Result.Base, Result.Base + Result.Size, Info.State, Info.Protect, Count);
++    }
++    return {};
++  }
++
++  const auto RegionBase = reinterpret_cast<uint64_t>(Info.BaseAddress) & FEXCore::Utils::FEX_PAGE_MASK;
++  const auto RegionEnd = RegionBase + ((Info.RegionSize + FEXCore::Utils::FEX_PAGE_SIZE - 1) & FEXCore::Utils::FEX_PAGE_MASK);
++  const auto Base = std::max(Result.Base, RegionBase);
++  const auto End = std::min(Result.Base + Result.Size, RegionEnd);
++  if (Address < Base || Address >= End) {
++    return {};
++  }
++  return {Base, End - Base, Result.Writable};
++}
++
+ FEXCore::HLE::ExecutableRangeInfo InvalidationTracker::QueryExecutableRange(uint64_t Address) {
++  MEMORY_BASIC_INFORMATION Info;
++  if (!VirtualQuery(reinterpret_cast<LPCVOID>(Address), &Info, sizeof(Info))) {
++    return {};
++  }
++
+   // Assumes IntervalsLock is held.
+   const auto BuildResult = [this](uint64_t Address) -> FEXCore::HLE::ExecutableRangeInfo {
+     const auto XResult = XIntervals.Query(Address);
+@@ -268,7 +312,7 @@ FEXCore::HLE::ExecutableRangeInfo InvalidationTracker::QueryExecutableRange(uint
+     std::shared_lock Lock(IntervalsLock);
+     const auto Result = BuildResult(Address);
+     if (Result.Size) {
+-      return Result;
++      return ClampToAccessible(Result, Address, Info);
+     }
+   }
+ 
+@@ -282,11 +326,6 @@ FEXCore::HLE::ExecutableRangeInfo InvalidationTracker::QueryExecutableRange(uint
+   // another - land exactly here (Blizzard's *_loader.dll among them). Rather than add a notification for
+   // every mapping path, treat a miss as "ask the OS": if it says the page is executable, trust it and
+   // start tracking the region.
+-  MEMORY_BASIC_INFORMATION Info;
+-  if (!VirtualQuery(reinterpret_cast<LPCVOID>(Address), &Info, sizeof(Info))) {
+-    return {};
+-  }
+-
+   if (Info.State != MEM_COMMIT) {
+     return {};
+   }
+@@ -322,7 +361,7 @@ FEXCore::HLE::ExecutableRangeInfo InvalidationTracker::QueryExecutableRange(uint
+   }
+ 
+   std::shared_lock Lock(IntervalsLock);
+-  return BuildResult(Address);
++  return ClampToAccessible(BuildResult(Address), Address, Info);
+ }
+ 
+ void InvalidationTracker::DetectMonoBackpatcherBlock(FEXCore::Core::InternalThreadState* Thread, uint64_t HostPc) {
+-- 
+2.43.0
+

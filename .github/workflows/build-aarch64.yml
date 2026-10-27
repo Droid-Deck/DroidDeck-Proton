@@ -345,6 +345,12 @@ jobs:
           fexver=$(grep -aoE 'FEX-[0-9]{4}(\.[0-9]+)?-[0-9]+-g[0-9a-f]{6,}' "$(find x -name libarm64ecfex.dll | head -1)" | head -1 || true)
           if [ -z "$fexver" ]; then echo "FEX has no version name"; exit 1; fi
           echo "ok: FEX version $fexver"
+          tar -C x -xzf new/$NAME.tar.gz --wildcards '*/aarch64-windows/libwow64fex.dll'
+          ec=$(find x -name libarm64ecfex.dll | head -1) wow=$(find x -name libwow64fex.dll | head -1)
+          if ! grep -aq FEX_DEBUGLOG "$ec" || ! grep -aq compilefault "$ec" || ! grep -aq FEX_DEBUGLOG "$wow"; then
+            echo "FEX was built without patches/fex (Blizzard loader fixes)"; exit 1
+          fi
+          echo "ok: FEX carries patches/fex"
           # The proton script copies igdext64.dll into the prefix's DriverStore; run that step from
           # the shipped script against the shipped files.
           tar -C x -xzf new/$NAME.tar.gz "$DIR/proton" --wildcards '*/files/lib/wine/igdext/*'

@@ -1,0 +1,210 @@
+From 3251049b1c1b461ab9addc0edcd99a401712d564 Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Thu, 8 Oct 2026 01:40:13 +0000
+Subject: [PATCH 11/12] OpcodeDispatcher: 32-bit address size for MOVS/STOS,
+ FS/GS selector loads in 64-bit mode
+
+Two instructions D2R's protector executes from its watchdog thread were
+refused with a decode failure. A decode failure ends the block, the next
+block starting on that instruction compiles to nothing, and the
+dispatcher raises #UD to the guest; nothing is cached, so the failure
+repeats on every execution. Both instructions are valid on hardware.
+
+MOVS/STOS with the 0x67 prefix in 64-bit mode (rep movsb seen four
+times per run): use the 32-bit halves of RSI/RDI/RCX and write them back
+zero-extended, exactly as CMPS, SCAS and LODS already do through
+GetStringOpSize. The 16-bit case in 32-bit mode stays unsupported. The
+non-rep paths now advance the register value rather than the
+segment-adjusted address, which only differs for a non-flat DS/ES.
+
+MOV to FS/GS and POP FS/GS in 64-bit mode (about 700 per hour): load the
+selector only. On x86-64 the FS/GS bases live in MSRs and the OS keeps GS
+pointing at the TEB, so the cached base must not be reloaded from the
+emulated GDT; POP FS/GS used to do exactly that.
+
+Built as 2610-d2rfix28.
+
+---
+ .../Interface/Core/OpcodeDispatcher.cpp       | 72 ++++++++++++-------
+ .../Source/Interface/Core/OpcodeDispatcher.h  |  2 +
+ 2 files changed, 48 insertions(+), 26 deletions(-)
+
+diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+index 7e86e3703..efba9f8f4 100644
+--- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
++++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.cpp
+@@ -457,6 +457,11 @@ void OpDispatchBuilder::POPSegmentOp(OpcodeArgs, uint32_t SegmentReg) {
+   default: break; // Do nothing
+   }
+ 
++  if (Is64BitMode && (SegmentReg == FEXCore::X86Tables::DecodeFlags::FLAG_FS_PREFIX || SegmentReg == FEXCore::X86Tables::DecodeFlags::FLAG_GS_PREFIX)) {
++    // See MOVSegOp: in 64-bit mode only the selector changes, the base stays.
++    return;
++  }
++
+   UpdatePrefixFromSegment(NewSegment, SegmentReg);
+ }
+ 
+@@ -1281,8 +1286,10 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+         _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, gs_idx));
+         UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_GS_PREFIX);
+       } else {
+-        LogMan::Msg::EFmt("We don't support modifying GS selector in 64bit mode!");
+-        DecodeFailure = true;
++        // 64-bit mode: a valid instruction that loads the selector only. The FS/GS bases live in MSRs there and the OS
++        // keeps GS pointing at the TEB, so the cached base must not be touched (the GDT walk in UpdatePrefixFromSegment
++        // would clobber it). Protectors execute this as an anti-debug probe; refusing it raised a bogus #UD every time.
++        _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, gs_idx));
+       }
+       break;
+     case FEXCore::X86State::REG_RSP: // FS
+@@ -1291,8 +1298,8 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
+         _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, fs_idx));
+         UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_FS_PREFIX);
+       } else {
+-        LogMan::Msg::EFmt("We don't support modifying FS selector in 64bit mode!");
+-        DecodeFailure = true;
++        // See GS above.
++        _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, fs_idx));
+       }
+       break;
+     default: UnimplementedOp(Op); return;
+@@ -3298,14 +3305,25 @@ void OpDispatchBuilder::DECOp(OpcodeArgs) {
+   }
+ }
+ 
++void OpDispatchBuilder::StoreStringAddress(X86State::X86Reg Reg, Ref Value, IR::OpSize AddrSize) {
++  if (Is64BitMode && AddrSize == OpSize::i32Bit) {
++    // 32-bit address size in 64-bit mode: the register is written back zero-extended, as the hardware does.
++    StoreGPRRegister(Reg, _Bfe(OpSize::i64Bit, 32, 0, Value));
++  } else {
++    StoreGPRRegister(Reg, Value, AddrSize);
++  }
++}
++
+ void OpDispatchBuilder::STOSOp(OpcodeArgs) {
+-  if (Op->Flags & FEXCore::X86Tables::DecodeFlags::FLAG_ADDRESS_SIZE) {
+-    LogMan::Msg::EFmt("STOSOp: Can't handle address size override (OP: 0x{:04X}, Flags: 0x{:08X})", Op->OP, Op->Flags);
++  if (!Is64BitMode && (Op->Flags & FEXCore::X86Tables::DecodeFlags::FLAG_ADDRESS_SIZE)) {
++    LogMan::Msg::EFmt("STOSOp: Address size override (0x67) not supported in 32-bit mode (OP: 0x{:04X}).", Op->OP);
+     DecodeFailure = true;
+     return;
+   }
+ 
+   const auto Size = OpSizeFromSrc(Op);
++  // In 64-bit mode an address size override makes the string registers 32-bit (EDI, ECX), handled like CMPS/SCAS/LODS.
++  const OpSize AddrSize = GetStringOpSize(Op);
+   const bool Repeat = (Op->Flags & (FEXCore::X86Tables::DecodeFlags::FLAG_REP_PREFIX | FEXCore::X86Tables::DecodeFlags::FLAG_REPNE_PREFIX)) != 0;
+ 
+   if (!Repeat) {
+@@ -3313,7 +3331,8 @@ void OpDispatchBuilder::STOSOp(OpcodeArgs) {
+     Ref Src = LoadGPRRegister(X86State::REG_RAX, Size, 0, true);
+ 
+     // Only ES prefix
+-    Ref Dest = MakeSegmentAddress(X86State::REG_RDI, 0, X86Tables::DecodeFlags::FLAG_ES_PREFIX, true);
++    Ref Src_RDI = LoadGPRRegister(X86State::REG_RDI, AddrSize);
++    Ref Dest = AppendSegmentOffset(Src_RDI, 0, X86Tables::DecodeFlags::FLAG_ES_PREFIX, true);
+ 
+     // Store to memory where RDI points
+     if (CTX->IsMemcpyAtomicTSOEnabled()) {
+@@ -3323,40 +3342,41 @@ void OpDispatchBuilder::STOSOp(OpcodeArgs) {
+     }
+ 
+     // Offset the pointer
+-    Ref TailDest = LoadGPRRegister(X86State::REG_RDI);
+-    StoreGPRRegister(X86State::REG_RDI, OffsetByDir(TailDest, IR::OpSizeToSize(Size)));
++    StoreStringAddress(X86State::REG_RDI, OffsetByDir(Src_RDI, IR::OpSizeToSize(Size)), AddrSize);
+   } else {
+     // FEX doesn't support partial faulting REP instructions.
+     // Converting this to a `MemSet` IR op optimizes this quite significantly in our codegen.
+     // If FEX is to gain support for faulting REP instructions, then this implementation needs to change significantly.
+     Ref Src = LoadGPRRegister(X86State::REG_RAX, Size);
+-    Ref Dest = LoadGPRRegister(X86State::REG_RDI);
++    Ref Dest = LoadGPRRegister(X86State::REG_RDI, AddrSize);
+ 
+     // Only ES prefix
+     auto Segment = GetSegment(0, FEXCore::X86Tables::DecodeFlags::FLAG_ES_PREFIX, true);
+ 
+-    Ref Counter = LoadGPRRegister(X86State::REG_RCX);
++    Ref Counter = LoadGPRRegister(X86State::REG_RCX, AddrSize);
+ 
+     auto Result = _MemSet(CTX->IsAtomicTSOEnabled(), Size, Segment ?: InvalidNode, Dest, Src, Counter, LoadDir(1));
+     StoreGPRRegister(X86State::REG_RCX, Constant(0));
+-    StoreGPRRegister(X86State::REG_RDI, Result);
++    StoreStringAddress(X86State::REG_RDI, Result, AddrSize);
+   }
+ }
+ 
+ void OpDispatchBuilder::MOVSOp(OpcodeArgs) {
+-  if (Op->Flags & FEXCore::X86Tables::DecodeFlags::FLAG_ADDRESS_SIZE) {
+-    LogMan::Msg::EFmt("MOVSOp: Can't handle address size override (OP: 0x{:04X}, Flags: 0x{:08X})", Op->OP, Op->Flags);
++  if (!Is64BitMode && (Op->Flags & FEXCore::X86Tables::DecodeFlags::FLAG_ADDRESS_SIZE)) {
++    LogMan::Msg::EFmt("MOVSOp: Address size override (0x67) not supported in 32-bit mode (OP: 0x{:04X}).", Op->OP);
+     DecodeFailure = true;
+     return;
+   }
+ 
+   // RA now can handle these to be here, to avoid DF accesses
+   const auto Size = OpSizeFromSrc(Op);
++  // In 64-bit mode an address size override makes the string registers 32-bit (ESI, EDI, ECX), handled like CMPS/SCAS/LODS.
++  const OpSize AddrSize = GetStringOpSize(Op);
+ 
+   if (Op->Flags & (FEXCore::X86Tables::DecodeFlags::FLAG_REP_PREFIX | FEXCore::X86Tables::DecodeFlags::FLAG_REPNE_PREFIX)) {
+-    auto SrcAddr = LoadGPRRegister(X86State::REG_RSI);
+-    auto DstAddr = LoadGPRRegister(X86State::REG_RDI);
+-    auto Counter = LoadGPRRegister(X86State::REG_RCX);
++    auto SrcAddr = LoadGPRRegister(X86State::REG_RSI, AddrSize);
++    auto DstAddr = LoadGPRRegister(X86State::REG_RDI, AddrSize);
++    auto Counter = LoadGPRRegister(X86State::REG_RCX, AddrSize);
+ 
+     auto DstSegment = GetSegment(0, FEXCore::X86Tables::DecodeFlags::FLAG_ES_PREFIX, true);
+     auto SrcSegment = GetSegment(Op->Flags, FEXCore::X86Tables::DecodeFlags::FLAG_DS_PREFIX);
+@@ -3382,11 +3402,13 @@ void OpDispatchBuilder::MOVSOp(OpcodeArgs) {
+     }
+ 
+     StoreGPRRegister(X86State::REG_RCX, Constant(0));
+-    StoreGPRRegister(X86State::REG_RDI, Result_Dst);
+-    StoreGPRRegister(X86State::REG_RSI, Result_Src);
++    StoreStringAddress(X86State::REG_RDI, Result_Dst, AddrSize);
++    StoreStringAddress(X86State::REG_RSI, Result_Src, AddrSize);
+   } else {
+-    Ref RSI = MakeSegmentAddress(X86State::REG_RSI, Op->Flags, X86Tables::DecodeFlags::FLAG_DS_PREFIX);
+-    Ref RDI = MakeSegmentAddress(X86State::REG_RDI, 0, X86Tables::DecodeFlags::FLAG_ES_PREFIX, true);
++    Ref Src_RSI = LoadGPRRegister(X86State::REG_RSI, AddrSize);
++    Ref Src_RDI = LoadGPRRegister(X86State::REG_RDI, AddrSize);
++    Ref RSI = AppendSegmentOffset(Src_RSI, Op->Flags, X86Tables::DecodeFlags::FLAG_DS_PREFIX);
++    Ref RDI = AppendSegmentOffset(Src_RDI, 0, X86Tables::DecodeFlags::FLAG_ES_PREFIX, true);
+ 
+     if (CTX->IsMemcpyAtomicTSOEnabled()) {
+       auto Src = _LoadMemGPRAutoTSO(Size, RSI, Size);
+@@ -3398,11 +3420,9 @@ void OpDispatchBuilder::MOVSOp(OpcodeArgs) {
+       _StoreMem(RegClass::GPR, Size, Src, RDI, Invalid(), OpSize::i8Bit, MemOffsetType::SXTX, 1);
+     }
+ 
+-    RSI = OffsetByDir(RSI, IR::OpSizeToSize(Size));
+-    RDI = OffsetByDir(RDI, IR::OpSizeToSize(Size));
+-
+-    StoreGPRRegister(X86State::REG_RSI, RSI);
+-    StoreGPRRegister(X86State::REG_RDI, RDI);
++    // Advance the registers themselves, not the segment-adjusted addresses.
++    StoreStringAddress(X86State::REG_RSI, OffsetByDir(Src_RSI, IR::OpSizeToSize(Size)), AddrSize);
++    StoreStringAddress(X86State::REG_RDI, OffsetByDir(Src_RDI, IR::OpSizeToSize(Size)), AddrSize);
+   }
+ }
+ 
+diff --git a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
+index 46e5df57f..8b3eedb68 100644
+--- a/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
++++ b/FEXCore/Source/Interface/Core/OpcodeDispatcher.h
+@@ -1527,6 +1527,8 @@ private:
+ #undef OpcodeArgs
+ 
+   Ref AppendSegmentOffset(Ref Value, uint32_t Flags, uint32_t DefaultPrefix = 0, bool Override = false);
++  // Writes back a string-instruction address register (RSI/RDI) honouring the address size.
++  void StoreStringAddress(X86State::X86Reg Reg, Ref Value, IR::OpSize AddrSize);
+   Ref GetSegment(uint32_t Flags, uint32_t DefaultPrefix = FEXCore::X86Tables::DecodeFlags::FLAG_NO_PREFIX, bool Override = false);
+ 
+   void UpdatePrefixFromSegment(Ref Segment, uint32_t SegmentReg);
+-- 
+2.43.0
+

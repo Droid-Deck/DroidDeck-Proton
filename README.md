@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.8)</b></summary>
+<summary><b>Pins (11-11.9)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -59,6 +59,9 @@ offscreen-check cache for DroidDeck's Performance mode: off unless `WINE_OFFSCRE
 11-11.7 is 11-11.6 plus Wine's own DLLs no longer reported read-only (MapleStory copies ws2_32.dll and crashed).
 11-11.8 is 11-11.7 plus Android's shared storage treated as case-insensitive, so creating files in a large folder there
 no longer lists the whole folder each time (Battle.net installs into a Games folder slowed to about 100 KB/s).
+11-11.9 is 11-11.8 plus Dmage22's FEX-D2 fixes for Blizzard's protected loaders in the bundled FEX (`patches/fex`,
+applied on top of the FEX pin at every build). StarCraft Remastered's 32-bit client no longer faults in `ClientSdk.dll`
+when it starts.
 
 </details>
 
@@ -239,7 +242,7 @@ instead of `patches/protonprep-valve-staging.sh` and
 [CachyOS](https://github.com/CachyOS/proton-cachyos) · NelloKudo · Etaash Mathamsetty ·
 Elizabeth Figura (esync, fsync, ntsync) · maxjivi05 / DroidDeck (droiddeck-esync) ·
 Arihany and GameNative (SD card fixes) · Brendan Shanks, utkarshdalal, whatsupbros
-(.NET fix) · arusiasotto (WoW ARM64EC fix) · oldschoola
+(.NET fix) · arusiasotto (WoW ARM64EC fix) · Dmage22 ([FEX-D2](https://github.com/Dmage22/FEX-D2), Blizzard loader fixes) · oldschoola
 ([linux_maplestory](https://github.com/oldschoola/linux_maplestory), MapleStory research) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
 patch author named in the commit history.
 

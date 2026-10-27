@@ -1,0 +1,40 @@
+From d3a64ee916af69e595ec50372667e60b668ebd21 Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Mon, 21 Sep 2026 09:00:20 -0700
+Subject: [PATCH 05/12] Windows: set EXCEPTION_ACCESS_VIOLATION explicitly for
+ guest page faults
+
+Every other case in HandleGuestException sets Dst.ExceptionCode; the
+X86_TRAPNO_PF case did not and inherited the code of the host exception.
+That was only correct while the SIGSEGV trampoline raised a host access
+violation. Since it raises with hlt on Windows, guest execute faults were
+delivered as EXCEPTION_ILLEGAL_INSTRUCTION carrying access-violation
+parameters:
+
+  pf.raise rip=14155F204 fault=14155F204
+  rtcs.enter code=C000001D pc=14155F204 info1=14155F204
+
+Blizzard's Eidolon protector expects an access violation on its PAGE_NOACCESS
+decrypt-on-demand page; an illegal instruction there makes it report a crash.
+
+---
+ Source/Windows/Common/Exception.h | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Source/Windows/Common/Exception.h b/Source/Windows/Common/Exception.h
+index 97124acf6..6b8528967 100644
+--- a/Source/Windows/Common/Exception.h
++++ b/Source/Windows/Common/Exception.h
+@@ -94,6 +94,9 @@ static inline EXCEPTION_RECORD HandleGuestException(FEXCore::Core::CpuStateFrame
+         FaultAddress = RipPage + FEXCore::Utils::FEX_PAGE_SIZE;
+       }
+ 
++      // Set the code explicitly like every other case: the host trap that got us here is not necessarily an
++      // access violation (on Windows the SIGSEGV trampoline raises it with hlt).
++      Dst.ExceptionCode = EXCEPTION_ACCESS_VIOLATION;
+       Dst.NumberParameters = 2;
+       Dst.ExceptionInformation[0] = EXCEPTION_EXECUTE_FAULT;
+       Dst.ExceptionInformation[1] = FaultAddress;
+-- 
+2.43.0
+

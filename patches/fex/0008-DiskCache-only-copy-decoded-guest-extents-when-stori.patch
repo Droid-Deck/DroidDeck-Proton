@@ -1,0 +1,46 @@
+From d345a55eccc05cd2d9a91072cf599f3dac1fb185 Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Mon, 28 Sep 2026 10:03:28 -0700
+Subject: [PATCH 08/12] DiskCache: only copy decoded guest extents when storing
+ a block
+
+Store() copied the whole [StartAddr, StartAddr + Length) span of guest
+memory into the cache blob. With multiblock that span can include gaps
+the decoder never touched - for code that a protector decrypts on demand
+those are PAGE_NOACCESS pages. Reading them faults from inside the
+compiler while compilation locks are held; the protector's fault
+handler then needs the JIT (or an invalidation) and the process
+deadlocks. This only shows with DiskCacheAnonCaching, since such code
+is anonymous.
+
+The guest hash and all later comparisons only use ExactGuestCodeExtents,
+so copy just those and leave the gaps zeroed.
+
+---
+ FEXCore/Source/Interface/Core/DiskCache.cpp | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/FEXCore/Source/Interface/Core/DiskCache.cpp b/FEXCore/Source/Interface/Core/DiskCache.cpp
+index ed63ddb62..fd59ac06d 100644
+--- a/FEXCore/Source/Interface/Core/DiskCache.cpp
++++ b/FEXCore/Source/Interface/Core/DiskCache.cpp
+@@ -1215,7 +1215,15 @@ namespace DiskCache {
+       }
+     }
+ 
+-    memcpy(BlobData + GuestCodeOffset, GuestCode.data(), GuestCode.size());
++    // Copy only the decoded extents. With multiblock the span between StartAddr and StartAddr + Length can
++    // cover gaps the decoder never read - possibly pages that are not accessible right now (e.g. code a
++    // protector keeps PAGE_NOACCESS until it decrypts it on demand). Touching those from inside the
++    // compiler faults with compilation locks held. Gaps are never compared (lookup and validation only
++    // look at the extents), so zero them instead.
++    memset(BlobData + GuestCodeOffset, 0, GuestCode.size());
++    for (uint32_t i = 0; i < ExactGuestCodeExtents.size(); i += 2) {
++      memcpy(BlobData + GuestCodeOffset + ExactGuestCodeExtents[i], GuestCode.data() + ExactGuestCodeExtents[i], ExactGuestCodeExtents[i + 1]);
++    }
+ 
+     MesaFOZ::foz_payload_key Key = {};
+     {
+-- 
+2.43.0
+
