@@ -1,0 +1,133 @@
+From ba36fc7d9f4b2f47a3dbaee1a9654bf49becf271 Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Sun, 20 Sep 2026 03:06:08 -0700
+Subject: [PATCH 01/12] Windows: track executable non-image section views,
+ report real fetch-fault address
+
+Two fixes needed to run Blizzard's Arxan-wrapped loaders (D2R_loader.dll,
+WowClassic_loader.dll) under Wine ARM64EC. Both are ported from the analysis in
+FEX-Emu/FEX#5328; bugs 2 and 4 from that report are already upstream.
+
+ARM64EC/Module.cpp - executable views of non-image sections were never tracked.
+NotifyMapViewOfSection routes every notification through HandleImageMap, which
+walks a PE header. A view of a pagefile-backed section has none, and its
+executability comes from the view's access rights at NtMapViewOfSection time
+rather than a later NtProtectVirtualMemory call, so no protection notification
+fires either. The range stays out of XIntervals and executing it is rejected
+even though the OS considers the page executable. Protectors that dodge W^X by
+double-mapping one section - executable at one address, writable at another -
+land exactly here. Let HandleImageMap report whether the mapping was a PE image
+and, when it was not, feed the range to HandleMemoryProtectionNotification.
+
+Common/Exception.h - X86_TRAPNO_PF reported ExceptionInformation[1] = Rip. The
+address has to be the first byte that could not be fetched, which differs when
+an instruction sits at the tail of an executable page and runs into the next
+one. Decrypt-on-demand protectors spin forever otherwise: the handler sees an
+address in a page it has already unlocked, concludes there is nothing to do,
+resumes, and faults identically. An x86 instruction is at most 15 bytes, so it
+can cross only one page boundary - if the instruction's own page is executable,
+the fault came from the following one.
+
+---
+ Source/Windows/ARM64EC/Module.cpp | 27 +++++++++++++++++++++++++--
+ Source/Windows/Common/Exception.h | 25 ++++++++++++++++++++++---
+ 2 files changed, 47 insertions(+), 5 deletions(-)
+
+diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
+index 80752f1b8..79b2a7cab 100644
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -347,11 +347,23 @@ bool InitSyscalls() {
+   return true;
+ }
+ 
+-void HandleImageMap(uint64_t Address, bool MainImage = false) {
++bool HandleImageMap(uint64_t Address, bool MainImage = false) {
++  auto* Nt = RtlImageNtHeader(reinterpret_cast<HMODULE>(Address));
++  if (!Nt || Nt->Signature != IMAGE_NT_SIGNATURE) {
++    return false;
++  }
++
+   fextl::string ModulePath = FEX::Windows::GetSectionFilePath(Address);
+   fextl::string ModuleName = fextl::string {FEX::Windows::BaseName(ModulePath)};
+   InvalidationTracker->HandleImageMap(ModuleName, Address);
+   ImageTracker->HandleImageMap(ModulePath, Address, MainImage);
++  return true;
++}
++
++// A mapped view that is not a PE image still needs its executability tracked. Sanity-check the
++// notification before trusting it.
++bool IsLikelyMapViewNotification(uint64_t Address, uint64_t Size, ULONG Prot) {
++  return Address && Size && !(Address + Size < Address) && Prot;
+ }
+ 
+ void HandleImageUnmap(uint64_t Address, uint64_t Size) {
+@@ -928,7 +940,18 @@ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Si
+ 
+   {
+     std::scoped_lock Lock(ThreadCreationMutex);
+-    HandleImageMap(reinterpret_cast<uint64_t>(Address));
++    // Executable views of non-image sections reach us here but have no PE header, so HandleImageMap
++    // cannot track them, and their executability comes from the view's access rights rather than a
++    // later NtProtectVirtualMemory call - so no protection notification ever fires either. Such a
++    // range ends up untracked and executing it is rejected even though the OS considers the page
++    // executable. Protectors that dodge W^X by double-mapping one section - executable at one
++    // address, writable at another - land exactly here (Blizzard's *_loader.dll among them).
++    const uint64_t GuestAddress = reinterpret_cast<uint64_t>(Address);
++    const uint64_t GuestSize = static_cast<uint64_t>(Size);
++
++    if (!HandleImageMap(GuestAddress) && IsLikelyMapViewNotification(GuestAddress, GuestSize, Prot)) {
++      InvalidationTracker->HandleMemoryProtectionNotification(GuestAddress, GuestSize, Prot);
++    }
+   }
+ 
+ 
+diff --git a/Source/Windows/Common/Exception.h b/Source/Windows/Common/Exception.h
+index 12162233c..97124acf6 100644
+--- a/Source/Windows/Common/Exception.h
++++ b/Source/Windows/Common/Exception.h
+@@ -6,6 +6,7 @@
+ #include <winternl.h>
+ 
+ #include <FEXCore/Utils/LogManager.h>
++#include <FEXCore/Utils/TypeDefines.h>
+ #include <FEXCore/Debug/InternalThreadState.h>
+ 
+ namespace FEX::Windows {
+@@ -74,12 +75,30 @@ static inline EXCEPTION_RECORD HandleGuestException(FEXCore::Core::CpuStateFrame
+       }
+       break;
+     case FEXCore::X86State::X86_TRAPNO_OF: Dst.ExceptionCode = EXCEPTION_INT_OVERFLOW; return Dst;
+-    case FEXCore::X86State::X86_TRAPNO_PF:
+-      // A page-fault raised by an explicit break in JIT code is always an execute fault
++    case FEXCore::X86State::X86_TRAPNO_PF: {
++      // A page-fault raised by an explicit break in JIT code is always an execute fault.
++      //
++      // The reported address has to be the first byte that could not be fetched, which is not always
++      // the start of the instruction: an instruction sitting at the tail of an executable page and
++      // running into the next one faults on that next page. Reporting the instruction start instead
++      // makes decrypt-on-demand protectors spin forever - their handler looks at
++      // ExceptionInformation[1], sees a page it has already unlocked, decides there is nothing to do,
++      // resumes, and faults identically. An x86 instruction is at most 15 bytes, so it can only ever
++      // cross a single page boundary.
++      uint64_t FaultAddress = Rip;
++      const uint64_t RipPage = Rip & FEXCore::Utils::FEX_PAGE_MASK;
++      constexpr ULONG ExecProt = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
++      MEMORY_BASIC_INFORMATION Info;
++      if (VirtualQuery(reinterpret_cast<LPCVOID>(RipPage), &Info, sizeof(Info)) && Info.State == MEM_COMMIT &&
++          (Info.Protect & ExecProt)) {
++        FaultAddress = RipPage + FEXCore::Utils::FEX_PAGE_SIZE;
++      }
++
+       Dst.NumberParameters = 2;
+       Dst.ExceptionInformation[0] = EXCEPTION_EXECUTE_FAULT;
+-      Dst.ExceptionInformation[1] = Rip;
++      Dst.ExceptionInformation[1] = FaultAddress;
+       return Dst;
++    }
+     default: LogMan::Msg::EFmt("Unknown SIGSEGV trap: {}", Fault.TrapNo); break;
+     }
+     break;
+-- 
+2.43.0
+

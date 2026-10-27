@@ -12,3 +12,10 @@ apply "$root/patches/wine-hotfixes/pending/server-android-shared-storage-owner.p
 apply "$root/patches/wine-hotfixes/pending/ntdll-i386-recover-lost-wake-on-address.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-wine-files-not-readonly.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-android-storage-case-insensitive.patch"
+if [ -f "$root/FEX/CMakeLists.txt" ]; then
+  cd "$root/FEX"
+  for p in "$root"/patches/fex/*.patch; do
+    echo "FEX patch: $(basename "$p")"
+    patch -Np1 --forward < "$p"
+  done
+fi

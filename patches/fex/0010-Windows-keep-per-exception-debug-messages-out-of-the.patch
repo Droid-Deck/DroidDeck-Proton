@@ -1,0 +1,51 @@
+From 4aa2432ac01ae56b9100eaa8c67ca8513d927f97 Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Wed, 7 Oct 2026 21:34:49 +0000
+Subject: [PATCH 10/12] Windows: keep per-exception debug messages out of the
+ log unless FEX_DEBUGLOG=1
+
+LogMan's DEBUG level sits below INFO, so every build prints the DFmt
+trace of each guest exception (Exception/Reconstructing context/pc/
+Passing through). D2R's protector keeps one thread in an int3-obfuscated
+loop for the whole session; a single run produced 1.7 million such lines
+(69 MB) and three lines that mattered. Make the debug level opt-in on
+the Windows frontend; info and error lines, including [xrange] and
+[compilefault], are unchanged.
+
+---
+ Source/Windows/Common/Logging.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/Source/Windows/Common/Logging.cpp b/Source/Windows/Common/Logging.cpp
+index 21fbdfd1f..b2e5d28d8 100644
+--- a/Source/Windows/Common/Logging.cpp
++++ b/Source/Windows/Common/Logging.cpp
+@@ -12,8 +12,15 @@
+ namespace {
+ void (*WineDbgOut)(const char* Message);
+ FILE* LogFile;
++bool DebugMessages;
+ 
+ static void MsgHandler(LogMan::DebugLevels Level, const char* Message) {
++  // Debug-level messages are compiled in on every build (INFO is the most verbose level) and trace every
++  // guest exception. A protector that runs int3-obfuscated code in a loop produces hundreds of those per
++  // second, which buries the lines worth reading. Keep them opt-in: FEX_DEBUGLOG=1.
++  if (Level == LogMan::DEBUG && !DebugMessages) {
++    return;
++  }
+   const auto Output = fextl::fmt::format("{} {:X} {}\n", LogMan::DebugLevelStr(Level), GetCurrentThreadId(), Message);
+   if (WineDbgOut) {
+     WineDbgOut(Output.c_str());
+@@ -45,6 +52,9 @@ void Init() {
+     return;
+   }
+ 
++  const char* DebugLog = getenv("FEX_DEBUGLOG");
++  DebugMessages = DebugLog && DebugLog[0] && DebugLog[0] != '0';
++
+   WineDbgOut = reinterpret_cast<decltype(WineDbgOut)>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "__wine_dbg_output"));
+   if (!WineDbgOut) {
+     const auto Path = fextl::fmt::format("{}\\fex-{}.log", getenv("LOCALAPPDATA"), GetCurrentProcessId());
+-- 
+2.43.0
+

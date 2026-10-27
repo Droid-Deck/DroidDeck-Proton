@@ -1,0 +1,52 @@
+From 3ff597079967bfac25380503479a579352b20d4f Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Sun, 20 Sep 2026 21:51:30 -0700
+Subject: [PATCH 02/12] ARM64EC: only treat MEM_IMAGE views as images in
+ HandleImageMap
+
+HandleImageMap decided "is this an image?" by whether a PE header parses at the
+address. A pagefile-backed section can carry one: Blizzard's D2R_loader.dll copies
+its own image into such a section (size 0x23D0000, the image size), unmaps the
+original and maps the copy back at the same base. FEX then parsed the copy as an
+image, walked the load config at base+0x1E20AC0 (.rdata) before the protector had
+restored its page protections, and took an access violation in its own
+notification handler:
+
+  mapview.nonimage addr=0x4FE0000 size=0x23D0000 prot=0x4 tracked=true
+  Load module  (-2f3b800552fb2cef): 6FFA270000     <- empty name: not a real image
+  Exception: Code: C0000005 Address: <libarm64ecfex.dll+0x193AA8>
+
+Query the view type instead; a copied header cannot make a MEM_MAPPED view look
+like MEM_IMAGE. Non-image views fall through to protection tracking as before.
+
+Also bump the package version so it installs alongside 2609-d2rfix.
+
+---
+ Source/Windows/ARM64EC/Module.cpp | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
+index 79b2a7cab..2dfcab1df 100644
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -348,6 +348,17 @@ bool InitSyscalls() {
+ }
+ 
+ bool HandleImageMap(uint64_t Address, bool MainImage = false) {
++  // Only a SEC_IMAGE view is an image. A pagefile-backed section can still carry a valid PE header:
++  // protectors that remap their own image copy it into such a section, unmap the original and map
++  // the copy back at the same base (Blizzard's *_loader.dll does this). Parsing that as an image
++  // walks the load config in .rdata before the protector has restored its page protections, and
++  // faults inside FEX. Decide by the view type, which a copied header cannot fake.
++  MEMORY_BASIC_INFORMATION Info;
++  if (NtQueryVirtualMemory(NtCurrentProcess(), reinterpret_cast<void*>(Address), MemoryBasicInformation, &Info, sizeof(Info), nullptr) ||
++      Info.Type != MEM_IMAGE) {
++    return false;
++  }
++
+   auto* Nt = RtlImageNtHeader(reinterpret_cast<HMODULE>(Address));
+   if (!Nt || Nt->Signature != IMAGE_NT_SIGNATURE) {
+     return false;
+-- 
+2.43.0
+

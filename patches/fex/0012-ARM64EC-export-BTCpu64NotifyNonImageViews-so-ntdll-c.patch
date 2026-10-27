@@ -1,0 +1,57 @@
+From 23e2c9004771a1eece0e190241fd0279a2db6279 Mon Sep 17 00:00:00 2001
+From: Utkarsh Dalal <dalal.utkarsh@gmail.com>
+Date: Sun, 11 Oct 2026 15:37:10 +0530
+Subject: [PATCH 12/12] ARM64EC: export BTCpu64NotifyNonImageViews so ntdll can
+ gate non-image view notifications
+
+ntdll forwards views of non-image sections only when the emulator exports this
+flag. A stock FEX has no PE header to parse for such a view and crashes in
+HandleImageMap, so the Wine side must stay silent for it.
+---
+ Source/Windows/ARM64EC/BTInterface.h     | 1 +
+ Source/Windows/ARM64EC/Module.cpp        | 4 ++++
+ Source/Windows/ARM64EC/libarm64ecfex.def | 1 +
+ 3 files changed, 6 insertions(+)
+
+diff --git a/Source/Windows/ARM64EC/BTInterface.h b/Source/Windows/ARM64EC/BTInterface.h
+index d57603079..67f351139 100644
+--- a/Source/Windows/ARM64EC/BTInterface.h
++++ b/Source/Windows/ARM64EC/BTInterface.h
+@@ -15,6 +15,7 @@ void STDMETHODCALLTYPE NotifyMemoryAlloc(void* Address, SIZE_T Size, ULONG Type,
+ void STDMETHODCALLTYPE NotifyMemoryFree(void* Address, SIZE_T Size, ULONG FreeType, BOOL After, NTSTATUS Status);
+ void STDMETHODCALLTYPE NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After, NTSTATUS Status);
+ NTSTATUS STDMETHODCALLTYPE NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Size, ULONG AllocType, ULONG Prot);
++extern ULONG BTCpu64NotifyNonImageViews;
+ void STDMETHODCALLTYPE NotifyUnmapViewOfSection(void* Address, BOOL After, NTSTATUS Status);
+ void STDMETHODCALLTYPE FlushInstructionCacheHeavy(const void* Address, SIZE_T Size);
+ void STDMETHODCALLTYPE BTCpu64FlushInstructionCache(const void* Address, SIZE_T Size);
+diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
+index 0e68b5e69..27319814f 100644
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -1089,6 +1089,10 @@ void NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After,
+   }
+ }
+ 
++// Exported so ntdll only forwards non-image section views to an emulator that can take them; a stock
++// emulator dereferences a missing PE header in HandleImageMap.
++ULONG BTCpu64NotifyNonImageViews = 1;
++
+ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Size, ULONG AllocType, ULONG Prot) {
+   if (!InvalidationTracker || !GetCPUArea().ThreadState()) {
+     return STATUS_SUCCESS;
+diff --git a/Source/Windows/ARM64EC/libarm64ecfex.def b/Source/Windows/ARM64EC/libarm64ecfex.def
+index bb51ca889..797c6f4a8 100644
+--- a/Source/Windows/ARM64EC/libarm64ecfex.def
++++ b/Source/Windows/ARM64EC/libarm64ecfex.def
+@@ -11,6 +11,7 @@ EXPORTS
+   BeginSimulation DATA
+   FlushInstructionCacheHeavy
+   NotifyMapViewOfSection
++  BTCpu64NotifyNonImageViews DATA
+   NotifyMemoryAlloc
+   NotifyMemoryFree
+   NotifyMemoryProtect
+-- 
+2.43.0
+

@@ -1,0 +1,127 @@
+From 91e9750a848ef8f09c22d7560c67496af3b3c6f1 Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Wed, 23 Sep 2026 11:34:28 -0700
+Subject: [PATCH 06/12] ARM64EC: retry stale NoExec faults instead of raising
+ them
+
+A NoExec stub compiled for a block entry that another thread makes executable
+mid-compile can outlive the invalidation from that protection change. It then
+raises an execute fault on every run for a page the tracker considers
+executable. Overwatch_loader.dll's decrypt-on-demand handler has nothing left
+to unlock and spins (~3600 faults per thread at Overwatch.exe+0x24A13A0) until
+the protector gives up with an Eidolon error.
+
+When the faulting RIP's 15-byte window is executable per the same query the
+frontend decodes against, invalidate the page(s) and re-enter the JIT at RIP,
+as hardware would. Bounded to 16 same-RIP retries. Bump wcp to d2rfix8 and
+build this branch too.
+
+On FEX with fault-free synchronous faults the ARM64EC fault reaches
+SynchronousExceptionHandler instead of ResetToConsistentState, so the same
+check runs there too and the guest continues from its packed context.
+---
+ Source/Windows/ARM64EC/Module.cpp | 74 +++++++++++++++++++++++++++++++
+ 1 file changed, 74 insertions(+)
+
+diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
+index 2dfcab1df..60f3744b2 100644
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -598,6 +598,71 @@ static void RethrowGuestException(FEXCore::Core::InternalThreadState* Thread, co
+   RaiseException(Thread, Rec, GuestContext);
+ }
+ 
++// A NoExec stub is compiled when a block entry is not executable at compile time. If another thread makes the page
++// executable while that stub is being compiled, the invalidation from the protection change can land before the stub
++// is published, leaving it cached for good: every later run raises an execute fault for a page that is executable.
++// Decrypt-on-demand protectors (Overwatch_loader.dll) then spin forever, since their handler has nothing left to
++// unlock. Real hardware would just run the code, so when the fault is stale drop the cached code and resume at RIP.
++static bool DropStaleNoExecBlock(FEXCore::Core::InternalThreadState* Thread) {
++  auto& Fault = Thread->CurrentFrame->SynchronousFaultData;
++  if (!Fault.FaultToTopAndGeneratedException || Fault.Signal != FEXCore::Core::FAULT_SIGSEGV ||
++      Fault.TrapNo != FEXCore::X86State::X86_TRAPNO_PF || !InvalidationTracker) {
++    return false;
++  }
++
++  const uint64_t Rip = Thread->CurrentFrame->State.rip;
++
++  // Bound the retries so a disagreement between the tracker and the compiler can never become a hang.
++  static thread_local uint64_t LastRip {};
++  static thread_local uint32_t Retries {};
++  Retries = (Rip == LastRip) ? Retries + 1 : 0;
++  LastRip = Rip;
++  if (Retries >= 16) {
++    Retries = 0;
++    return false;
++  }
++
++  // Use the same query the frontend decodes against, so a retry cannot compile another NoExec stub unless the
++  // range really is non-executable again. An x86 instruction is at most 15 bytes.
++  const uint64_t End = Rip + 15;
++  uint64_t Address = Rip;
++  while (Address < End) {
++    const auto Range = InvalidationTracker->QueryExecutableRange(Address);
++    if (!Range.Size) {
++      return false;
++    }
++    Address = Range.Base + Range.Size;
++  }
++
++  const uint64_t FirstPage = Rip & FEXCore::Utils::FEX_PAGE_MASK;
++  const uint64_t LastPage = (End - 1) & FEXCore::Utils::FEX_PAGE_MASK;
++  InvalidationTracker->InvalidateAlignedInterval(FirstPage, LastPage - FirstPage + FEXCore::Utils::FEX_PAGE_SIZE, false);
++
++  Fault.FaultToTopAndGeneratedException = false;
++  return true;
++}
++
++static bool RetryStaleNoExecFault(const ThreadCPUArea CPUArea, ARM64_NT_CONTEXT& Context) {
++  auto* Thread = CPUArea.ThreadState();
++  auto& Fault = Thread->CurrentFrame->SynchronousFaultData;
++  if (!Fault.FaultToTopAndGeneratedException || Fault.Signal != FEXCore::Core::FAULT_SIGSEGV) {
++    return false;
++  }
++
++  if (!IsDispatcherAddress(Context.Pc)) {
++    ReconstructThreadState(Thread, Context);
++  }
++  if (!DropStaleNoExecBlock(Thread)) {
++    return false;
++  }
++
++  Context.Pc = CPUArea.DispatcherLoopTopEnterECFillSRA();
++  Context.Sp = CPUArea.EmulatorStackBase();
++  Context.X11 = 0;                                        // ENTRY_FILL_SRA_SINGLE_INST_REG: normal block
++  Context.X17 = reinterpret_cast<uint64_t>(CPUArea.Area); // EC_ENTRY_CPUAREA_REG
++  return true;
++}
++
+ [[noreturn]]
+ static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore::Core::CpuStateFrame* Frame) {
+   // Coming in to this function, the guest state is synchronized and the host thread is in a safe location.
+@@ -609,6 +674,11 @@ static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore:
+   __asm volatile("mrs %[fpsr], fpsr" : [fpsr] "=r"(FPSR));
+ 
+   auto Context = StoreStateToPackedECContext(Thread, static_cast<uint32_t>(FPCR), static_cast<uint32_t>(FPSR));
++  if (DropStaleNoExecBlock(Thread)) {
++    NtContinueNative(&Context, false);
++    ERROR_AND_DIE_FMT("NtContinue returned");
++  }
++
+   EXCEPTION_RECORD Record = {};
+   switch (Fault.Signal) {
+   case FEXCore::Core::FAULT_SIGILL: Record.ExceptionCode = EXCEPTION_ILLEGAL_INSTRUCTION; break;
+@@ -853,6 +923,10 @@ bool ResetToConsistentStateImpl(const ThreadCPUArea CPUArea, EXCEPTION_RECORD* E
+     return true;
+   }
+ 
++  if (Exception::RetryStaleNoExecFault(CPUArea, *NativeContext)) {
++    return true;
++  }
++
+   if (IsEmulatorStackAddress(CPUArea, reinterpret_cast<uint64_t>(__builtin_frame_address(0)))) {
+     Exception::RethrowGuestException(Thread, *Exception, *NativeContext);
+     LogMan::Msg::DFmt("Rethrowing onto guest stack: {:X}", NativeContext->Sp);
+-- 
+2.43.0
+

@@ -1,0 +1,51 @@
+From fc6fd5c77c745016e2f6064bd2efafa07a11384a Mon Sep 17 00:00:00 2001
+From: Dmage22 <danny.sui.lee@gmail.com>
+Date: Mon, 21 Sep 2026 08:23:51 -0700
+Subject: [PATCH 04/12] Dispatcher: raise generated SIGSEGV with hlt on Windows
+
+The SIGSEGV trampoline forces a host fault by loading from address zero. The
+guest exception is then built from SynchronousFaultData alone - HandleGuestException
+overwrites the host exception code - so the choice of host trap only has to reach
+the emulator's exception handler.
+
+Under Wine it does not always. Once Blizzard's D2R_loader.dll has hooked ntdll it
+redirects execution into a PAGE_NOACCESS page of the decrypted game (decrypt on
+demand; the page is expected to fault). FEX compiles the NoExec block, but the
+resulting null load never reaches ResetToConsistentState: an entry log placed at
+its first line records 1762 exceptions over the run, including all 794 generated
+breakpoints, and nothing after the NoExec. No exception frame is set up either,
+and the thread stalls with the protector waiting for a fault that never comes.
+
+A host SIGSEGV goes through virtual_handle_fault before exception setup; SIGILL
+goes to exception setup directly, which is the route the breakpoints take. Use
+hlt, as the SIGILL trampoline already does. Other platforms are unchanged.
+
+---
+ FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp b/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp
+index 5637b8cef..6ed397b4f 100644
+--- a/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp
++++ b/FEXCore/Source/Interface/Core/Dispatcher/Dispatcher.cpp
+@@ -434,8 +434,17 @@ void Dispatcher::EmitDispatcher() {
+       PopCalleeSavedRegisters();
+       ret();
+     } else {
++#ifdef _WIN32
++      // The guest-visible fault is built from SynchronousFaultData, not from the host exception, so any trap
++      // that reaches the exception handler will do. Use the same one as SIGILL: a host SIGSEGV first goes
++      // through Wine's virtual_handle_fault, and after Blizzard's D2R_loader.dll hooks ntdll and redirects
++      // execution into a PAGE_NOACCESS page of the decrypted game, that fault never reaches the emulator and
++      // the thread stalls. The SIGILL route goes straight to exception setup and does reach it.
++      hlt(0);
++#else
+       LoadConstant(ARMEmitter::Size::i64Bit, ARMEmitter::Reg::r1, 0);
+       ldr(ARMEmitter::XReg::x1, ARMEmitter::Reg::r1);
++#endif
+     }
+   }
+ 
+-- 
+2.43.0
+
