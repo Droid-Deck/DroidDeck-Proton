@@ -18,4 +18,9 @@ if [ -f "$root/FEX/CMakeLists.txt" ]; then
     echo "FEX patch: $(basename "$p")"
     patch -Np1 --forward < "$p"
   done
+  # FEX's rpmalloc is a submodule of its own, out of reach of the series above.
+  for p in "$root"/patches/fex/rpmalloc/*.patch; do
+    echo "FEX rpmalloc patch: $(basename "$p")"
+    patch -d External/rpmalloc -Np1 --forward < "$p"
+  done
 fi
