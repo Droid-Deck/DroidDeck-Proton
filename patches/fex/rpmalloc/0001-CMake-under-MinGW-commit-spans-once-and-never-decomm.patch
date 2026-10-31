@@ -1,0 +1,33 @@
+From 689d72e0aae3a04b04c54a462909b138efdad488 Mon Sep 17 00:00:00 2001
+From: K11MCH1 <81425424+K11MCH1@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 09:32:03 +0900
+Subject: [PATCH] CMake: under MinGW, commit spans once and never decommit
+
+Under Wine, committing costs nothing until a page is touched, while every decommit and recommit pair takes Wine's global virtual memory lock. FEX's ARM64EC build now commits spans once when mapping them and never decommits them; other builds keep decommitting.
+---
+ CMakeLists.txt | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e6c4c1e..f0b4f83 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -3,9 +3,13 @@ set(SRCS
+ 
+ add_library(rpmalloc STATIC ${SRCS})
+ target_include_directories(rpmalloc PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/)
+-target_compile_definitions(rpmalloc PRIVATE ENABLE_OVERRIDE=0 ENABLE_DYNAMIC_LINK=0 ENABLE_STATISTICS=0 ENABLE_DECOMMIT=1 ENABLE_ASSERTS=0)
++target_compile_definitions(rpmalloc PRIVATE ENABLE_OVERRIDE=0 ENABLE_DYNAMIC_LINK=0 ENABLE_STATISTICS=0 ENABLE_ASSERTS=0)
+ if (MINGW)
+-  target_compile_definitions(rpmalloc PRIVATE DYNAMIC_TLS_NO_FLS=1)
++  # Under Wine, committing costs nothing until a page is touched, while every decommit and recommit pair takes Wine's
++  # global virtual memory lock: commit spans once when mapping them and never decommit.
++  target_compile_definitions(rpmalloc PRIVATE DYNAMIC_TLS_NO_FLS=1 ENABLE_DECOMMIT=0)
++else()
++  target_compile_definitions(rpmalloc PRIVATE ENABLE_DECOMMIT=1)
+ endif()
+ 
+ set_target_properties(rpmalloc PROPERTIES C_VISIBILITY_PRESET hidden)
+-- 
+2.55.0.windows.5
+
