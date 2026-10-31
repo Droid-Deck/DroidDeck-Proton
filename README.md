@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.9)</b></summary>
+<summary><b>Pins (11-11.10)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -62,6 +62,9 @@ no longer lists the whole folder each time (Battle.net installs into a Games fol
 11-11.9 is 11-11.8 plus Dmage22's FEX-D2 fixes for Blizzard's protected loaders in the bundled FEX (`patches/fex`,
 applied on top of the FEX pin at every build). StarCraft Remastered's 32-bit client no longer faults in `ClientSdk.dll`
 when it starts.
+11-11.10 is 11-11.9 plus a ws2_32 game patch for DiRT 3 and DiRT Showdown: with their motion telemetry on, a `sendto()`
+on the socket they closed at the end of a race (or when leaving Joyride) reports 0 bytes sent instead of failing with
+error 10038, which stopped the game.
 
 </details>
 
@@ -195,6 +198,22 @@ until the same change is tagged on **`The412Banner/proton-wine`**.
 | `syscall.c` / `thread.c` | Publish dispatcher in KSDT; `ntdll_arm64ec_sync_syscall_dispatch()` on EC thread start / after `ChpeV2` |
 | `env.c` | NLS section map fallback when section maps fail |
 | `virtual.c` | Map-time init of `__wine_syscall_dispatcher` for manually mapped ntdll SEC_IMAGE views |
+
+</details>
+
+<details>
+<summary><b>Game patch – DiRT 3 / DiRT Showdown telemetry (error 10038)</b></summary>
+
+Deferred build-time patch, applied by **`banner-proton/apply-deferred-game-patches.sh`** like the WoW one:
+
+[`patches/game-patches/dirt-telemetry-sendto-closed-socket.patch`](patches/game-patches/dirt-telemetry-sendto-closed-socket.patch)
+
+DiRT 3 (`dirt3_game.exe`) and DiRT Showdown (`showdown.exe`, `showdown_avx.exe`) keep sending motion telemetry on the
+UDP socket they closed at the end of a race and when leaving Joyride. `sendto()` fails with `WSAENOTSOCK` and the game
+stops with *"sendto failed with error 10038"*; Windows does the same. For these three executables only, `sendto()` in
+`dlls/ws2_32/socket.c` reports 0 bytes sent for that failure (the executable name is checked once per process). Every
+other game and every other `sendto()` result are unchanged. Same behaviour as
+[DiRTTelemetryErrorFix](https://github.com/RoccoC/DiRTTelemetryErrorFix) by RoccoC, based on Carsten Gottschling's fix.
 
 </details>
 
