@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Sun, 1 Nov 2026 12:30:00 -0500
+Subject: [PATCH] ntdll: Load 32-bit executables at their preferred base.
+
+The pending "Dynamically relocate .exes by default too" patch moves every
+.exe that has relocations and IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE to an
+address the server picks from the top of the address space. For a 32-bit
+program that is just below 2 GB: a test .exe with the usual 0x400000 base
+loads at 0x7bfb0000 on DroidDeck-Proton, while Valve's Proton, upstream
+Wine and the same prefix's free 0x400000 all leave it at 0x400000.
+
+Older 32-bit games and their loaders expect their executables at the
+image base. DiRT 2's launcher stops at once with its own report of a
+breakpoint at 0x0041452A; it runs on Proton Experimental, which loads
+the game at 0x400000. The patch's companion already notes that some
+32-bit programs break when their executable is moved that high, but it
+leaves them relocated unless WINE_DISABLE_EXE_ASLR=1 is set per game.
+
+Keep executable relocation, and its WINE_DISABLE_EXE_ASLR switch, for
+64-bit images, which the modding and hooking tools it was added for use.
+Map 32-bit executables at their preferred base as Wine does upstream;
+DLLs are unchanged.
+---
+ dlls/ntdll/unix/virtual.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -3670,8 +3670,8 @@
+     }
+ 
+     if (!image_info->map_addr &&
+-        ((image_info->image_charact & IMAGE_FILE_DLL) || !disable_exe_aslr ||
+-         strcmp( disable_exe_aslr, "1" )) &&
++        ((image_info->image_charact & IMAGE_FILE_DLL) ||
++         (is_machine_64bit( image_info->machine ) && (!disable_exe_aslr || strcmp( disable_exe_aslr, "1" )))) &&
+         (image_info->image_flags & IMAGE_FLAGS_ImageDynamicallyRelocated))
+     {
+         SERVER_START_REQ( get_image_map_address )
+-- 
+2.43.0
+
