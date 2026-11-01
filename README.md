@@ -67,7 +67,8 @@ on the socket they closed at the end of a race (or when leaving Joyride) reports
 error 10038, which stopped the game.
 11-11.11 is 11-11.10 plus 32-bit executables loaded at their preferred base again. Only 64-bit `.exe` files are
 relocated to the top of the address space now, so older 32-bit games and their loaders find themselves at the address
-they were built for, as on Valve's Proton (on 11-11.10 DiRT 2's launcher stopped at start with a breakpoint report).
+they were built for, as on Valve's Proton. A loader that starts a 32-bit game suspended can read and patch it at
+0x400000 again.
 
 </details>
 

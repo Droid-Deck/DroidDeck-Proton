@@ -7,15 +7,17 @@ The pending "Dynamically relocate .exes by default too" patch moves every
 .exe that has relocations and IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE to an
 address the server picks from the top of the address space. For a 32-bit
 program that is just below 2 GB: a test .exe with the usual 0x400000 base
-loads at 0x7bfb0000 on DroidDeck-Proton, while Valve's Proton, upstream
-Wine and the same prefix's free 0x400000 all leave it at 0x400000.
+loads at 0x7bfb0000, while Valve's Proton and upstream Wine leave it at
+0x400000.
 
-Older 32-bit games and their loaders expect their executables at the
-image base. DiRT 2's launcher stops at once with its own report of a
-breakpoint at 0x0041452A; it runs on Proton Experimental, which loads
-the game at 0x400000. The patch's companion already notes that some
-32-bit programs break when their executable is moved that high, but it
-leaves them relocated unless WINE_DISABLE_EXE_ASLR=1 is set per game.
+Game and mod loaders start the game suspended and patch it at the
+addresses it was built for. With the game relocated, a loader that
+creates it suspended reads 0x7b850000 as its image base, cannot read
+0x400000, and VirtualProtectEx() and WriteProcessMemory() at 0x401000
+fail (ERROR_INVALID_PARAMETER, ERROR_NOACCESS). The patch's companion
+already notes that some 32-bit programs break when their executable is
+moved that high, but leaves them relocated unless WINE_DISABLE_EXE_ASLR=1
+is set per game.
 
 Keep executable relocation, and its WINE_DISABLE_EXE_ASLR switch, for
 64-bit images, which the modding and hooking tools it was added for use.
