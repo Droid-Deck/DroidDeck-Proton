@@ -267,6 +267,7 @@ jobs:
           has dlls/ntdll/unix/syscall.c "ntdll_arm64ec_sync_syscall_dispatch"
           has dlls/ntdll/unix/env.c "map_nls_file_as_view"
           has dlls/ntdll/unix/virtual.c "map_image_init_ntdll_dispatchers"
+          has dlls/ntdll/unix/virtual.c "(is_machine_64bit( image_info->machine ) && (!disable_exe_aslr"
           exit $fail
 
   verify:

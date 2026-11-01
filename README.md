@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.10)</b></summary>
+<summary><b>Pins (11-11.11)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -65,6 +65,10 @@ when it starts.
 11-11.10 is 11-11.9 plus a ws2_32 game patch for DiRT 3 and DiRT Showdown: with their motion telemetry on, a `sendto()`
 on the socket they closed at the end of a race (or when leaving Joyride) reports 0 bytes sent instead of failing with
 error 10038, which stopped the game.
+11-11.11 is 11-11.10 plus 32-bit executables loaded at their preferred base again. Only 64-bit `.exe` files are
+relocated to the top of the address space now, so older 32-bit games and their loaders find themselves at the address
+they were built for, as on Valve's Proton. A loader that starts a 32-bit game suspended can read and patch it at
+0x400000 again.
 
 </details>
 
