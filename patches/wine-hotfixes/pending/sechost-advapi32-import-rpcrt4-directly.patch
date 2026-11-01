@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: The412Banner <the412banner@gmail.com>
+Date: Sun, 1 Nov 2026 19:30:00 -0500
+Subject: [PATCH] sechost, advapi32: Import rpcrt4 directly.
+
+Reapplies Proton's "HACK: Avoid delay importing rpcrt4" (Billy Laws,
+be454c4d1d6), which Proton reverted in 8fb9c7f7154 (Jacek Caban) once
+Valve's LLVM produced correct ARM64EC exit thunks for variadic calls.
+sechost and advapi32 call NdrClientCall2(), which is variadic, through a
+delay import. With exit thunks that are wrong for that call, the first
+service-manager request crashes.
+
+GOG games hit it at start: Galaxy64.dll opens the service manager
+(OpenSCManager over \pipe\svcctl), the call faults in rpcrt4, and DOOM
+(2016) shows "The engine has crashed!". Bannerlator's layers had the same
+crash and carry this change since proton-wine 5ba0fcd66f (2026-10-30).
+Importing rpcrt4 directly is correct with any toolchain.
+
+The sechost line differs from the original hack: this tree's sechost also
+imports setupapi.
+---
+--- a/dlls/advapi32/Makefile.in
++++ b/dlls/advapi32/Makefile.in
+@@ -1,8 +1,8 @@
+ EXTRADEFS = -D_ADVAPI32_
+ MODULE    = advapi32.dll
+ IMPORTLIB = advapi32
+-IMPORTS   = kernelbase sechost msvcrt
+-DELAYIMPORTS = cryptsp rpcrt4 user32 userenv
++IMPORTS   = kernelbase sechost msvcrt rpcrt4
++DELAYIMPORTS = cryptsp user32 userenv
+ 
+ SOURCES = \
+ 	advapi.c \
+--- a/dlls/sechost/Makefile.in
++++ b/dlls/sechost/Makefile.in
+@@ -1,7 +1,6 @@
+ MODULE    = sechost.dll
+ IMPORTLIB = sechost
+-IMPORTS   = kernelbase setupapi
+-DELAYIMPORTS = rpcrt4
++IMPORTS   = kernelbase setupapi rpcrt4
+ 
+ SOURCES = \
+ 	plugplay.idl \

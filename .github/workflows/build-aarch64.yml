@@ -268,6 +268,10 @@ jobs:
           has dlls/ntdll/unix/env.c "map_nls_file_as_view"
           has dlls/ntdll/unix/virtual.c "map_image_init_ntdll_dispatchers"
           has dlls/ntdll/unix/virtual.c "(is_machine_64bit( image_info->machine ) && (!disable_exe_aslr"
+          # sechost and advapi32 import rpcrt4 directly (ARM64EC exit thunks for its variadic NdrClientCall2).
+          has dlls/sechost/Makefile.in "IMPORTS   = kernelbase setupapi rpcrt4"
+          has dlls/advapi32/Makefile.in "IMPORTS   = kernelbase sechost msvcrt rpcrt4"
+          if grep -n "^DELAYIMPORTS.*rpcrt4" dlls/sechost/Makefile.in dlls/advapi32/Makefile.in; then echo "rpcrt4 is still delay-imported"; fail=1; fi
           exit $fail
 
   verify:
