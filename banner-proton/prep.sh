@@ -16,8 +16,10 @@ awk '
 /^### END WINE PATCHING ###$/ { skip=0 }
 ' "$GE_PREP" > /tmp/banner-proton-prep.sh
 
-# GE's script has no "set -e"; GE CI also tolerates a non-zero exit. Fail on any patch error instead.
-sed -i 's/^    patch -Np1 < "\$patch_path"$/    patch -Np1 < "$patch_path" || { echo "PATCH FAILED: $patch_path" >\&2; exit 1; }/' /tmp/banner-proton-prep.sh
+# GE's script has no "set -e"; GE CI also tolerates a non-zero exit. Fail on any patch error instead,
+# except for a patch whose change is already in the tree (it reverses cleanly): GE sometimes bumps a
+# submodule past one of its own patches (GE-Proton11-12: protonfixes 28a02c25 has patches/protonfixes/0003).
+sed -i 's/^    patch -Np1 < "\$patch_path"$/    if patch -Rp1 --dry-run -s -f < "$patch_path" >\/dev\/null 2>\&1; then echo "already in the tree, skipped: $patch_path"; else patch -Np1 < "$patch_path" || { echo "PATCH FAILED: $patch_path" >\&2; exit 1; }; fi/' /tmp/banner-proton-prep.sh
 grep -q 'PATCH FAILED' /tmp/banner-proton-prep.sh
 bash -e /tmp/banner-proton-prep.sh
 
