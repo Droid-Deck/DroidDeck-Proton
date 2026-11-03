@@ -2,6 +2,25 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-11-03
+
+### 11-12 rebase: GE-Proton11-12, Valve fda79a58, two CachyOS dev commits, PR #9 (rebase/11-12, CI pending, NOT device-tested)
+- **Why:** user asked to move to GE-Proton11-12 (released 2026-11-03) and add what GE and CachyOS have that we lack, without losing any of our fixes. User's choices: take the CachyOS dev picks, include K11MCH1's PR #9, work on a new branch off main.
+- **Branch:** `rebase/11-12` off main `e0de7fb0` (11-11.11). `ef7f0313` merges GE-Proton11-12 `f85547f0`: protonprep and the Space Marine 2 patch become GE's (the three GE master commits 11-11.1 took early are in 11-12), README stays ours, `proton` and `Makefile.in` merge cleanly. `ge-master` on the org is not moved yet (still `c0c2ee35`).
+- **Wine:** `banner-proton/11.12` `303894db` on The412Banner/proton-wine, tags `bp-11.12-tier1..7`; `banner-proton/11.11` untouched.
+  - Tier 1: Valve bleeding-edge `fda79a58` (GE's pin, +21 commits on `c53678ab`).
+  - Tier 2: GE-Proton11-12's wine section run unmodified, one commit per section, 0 failed patches.
+  - Tier 3: the 20 CachyOS commits of 11.11 unchanged + winebus.sys `b3795230` and hidclass.sys `447acb9a` from the unreleased `cachyos_11.0_20261014/dev`. setupapi `598410aa` not taken: GE has Fabian Wosar's full `SetupDiGetDeviceInterfaceAlias` (`proton-ds5-haptic/0102`) and the stub fix conflicts with it.
+  - Tiers 4, 6, 7 and the offscreen-check cache: `git range-diff` against 11.11 says identical.
+  - Tier 5 (droiddeck-esync) conflicted with GE's `server-keep-in-process-mutex-closed-while-in-use` (Jason Eggleston, GE `6161ec53`, adds keep/release_kept_inproc_sync requests and an ntsync orphan-mutex list). Ported by keeping both (serial + shm_idx in the cache entry; release closes the fd if any, frees the esync index, then releases a kept object; `esync_destroy()` before GE's ntsync orphan check). `gcc -fsyntax-only` of the server and ntdll unix files clean. The Components esync pack for GE-Proton11-12 fails the same way (Components run 41613296661); not touched here.
+  - Protocol: no change after tier 4, so `WINE_PROTOCOL_BASE` = tier 4 `a7caaeb2`; `tools/make_requests` gives the committed headers.
+- **Deferred patches:** `ntdll-i386-recover-lost-wake-on-address` (Max, 11-11.5) hunk 3 failed on GE's newer stale-alert fix (`960acd0a`); rebased: the i386 build takes that alert with the same 100 ms bounded wait inside GE's `!queued && STATUS_TIMEOUT` check and reports the wake. clang i686/aarch64-windows syntax check clean. All seven apply in order on `303894db`.
+- **FEX:** GE's pin moves to `02e24ca5` (FEX-2610-116). 0001-0012 apply (two with offsets); PR #9 (K11MCH1) merged as `028c2a8c`: 0013 applies after them, rpmalloc 0001 applies on the unchanged rpmalloc pin `ed227446`.
+- **Commits:** `ef7f0313` merge, `0e86e5c0` wine/PINS/README/i386 patch, `028c2a8c` PR #9. VERSION stays 11-11.11 (bump at the release cut).
+- **CI:** pending (build publish=false, compare_with DroidDeck-Proton-11-11.11; Verify wine tier 2).
+- **Device test plan (user's yes before install):** DiRT 3 or Showdown (telemetry), Battle.net (rebased 32-bit wake fix), a game from the SD card, NINJA GAIDEN (FMV), DOOM (2016), one controller game; logcat FATAL check; esync in the session log.
+- **Resume:** branch and wine tags are pushed; next is the CI run, then the device test.
+
 ## 2026-10-25
 
 ### 11-11.6: winex11 offscreen-check cache for DroidDeck's Performance mode (main, Latest, device-tested)
