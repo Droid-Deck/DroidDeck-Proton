@@ -17,7 +17,9 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 - **Deferred patches:** `ntdll-i386-recover-lost-wake-on-address` (Max, 11-11.5) hunk 3 failed on GE's newer stale-alert fix (`960acd0a`); rebased: the i386 build takes that alert with the same 100 ms bounded wait inside GE's `!queued && STATUS_TIMEOUT` check and reports the wake. clang i686/aarch64-windows syntax check clean. All seven apply in order on `303894db`.
 - **FEX:** GE's pin moves to `02e24ca5` (FEX-2610-116). 0001-0012 apply (two with offsets); PR #9 (K11MCH1) merged as `028c2a8c`: 0013 applies after them, rpmalloc 0001 applies on the unchanged rpmalloc pin `ed227446`.
 - **Commits:** `ef7f0313` merge, `0e86e5c0` wine/PINS/README/i386 patch, `028c2a8c` PR #9. VERSION stays 11-11.11 (bump at the release cut).
-- **CI:** pending (build publish=false, compare_with DroidDeck-Proton-11-11.11; Verify wine tier 2).
+- **CI run 1** (headSha `1520c23a`): Verify wine tier 2 41667549700 **green** (a fresh GE-Proton11-12 run on tier 1 reproduces `bp-11.12-tier2` exactly). Build 41667555200 **failed** in all four groups at "Prepare sources": GE's own `patches/protonfixes/0003` (Kingdoms of Amalur) is already in the protonfixes pin GE bumped to (`28a02c25`), `patch` skips the files and exits 1, and prep.sh treats that as fatal (GE's CI ignores it). The "Wine protocol unchanged" job (protocol + tier 6/7 + deferred patch source markers) passed.
+- **Fix:** prep.sh skips a patch that reverses cleanly ("already in the tree, skipped") and still fails on anything else. Checked locally on protonfixes `28a02c25` and the rest of the prep section.
+- **CI run 2:** pending.
 - **Device test plan (user's yes before install):** DiRT 3 or Showdown (telemetry), Battle.net (rebased 32-bit wake fix), a game from the SD card, NINJA GAIDEN (FMV), DOOM (2016), one controller game; logcat FATAL check; esync in the session log.
 - **Resume:** branch and wine tags are pushed; next is the CI run, then the device test.
 
