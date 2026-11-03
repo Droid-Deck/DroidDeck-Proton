@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (GE-Proton11-12 base)</b></summary>
+<summary><b>Pins (11-12.1)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -54,10 +54,12 @@ _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 vkd3d-proton (v3.1), vkd3d, d7vk, dxvk-nvapi (v0.9.3), dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
 GE-Proton11-12's pins.
 
-The move to GE-Proton11-12 carries every fix of 11-11.11 below: tiers 3–7 and the offscreen-check cache are
+11-12.1 moves to GE-Proton11-12 and carries every fix of 11-11.11 below: tiers 3–7 and the offscreen-check cache are
 cherry-picked onto `banner-proton/11.12` unchanged except the esync tier (ported, see tier 5), and the deferred
 Wine and FEX patches apply at build time as before. The 32-bit lost wake fix (11-11.5) is rebased onto GE's newer
-stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now.
+stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. New in 11-12.1 besides GE-Proton11-12:
+two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
+code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
 
 History on GE-Proton11-11: 11-11.2 is 11-11.1 plus
 tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch. 11-11.4 is 11-11.3 plus Android shared-storage file ownership.
