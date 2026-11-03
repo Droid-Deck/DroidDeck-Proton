@@ -1,26 +1,29 @@
 # Upstream pins for this DroidDeck-Proton version. Shell-sourceable.
-GE_PROTON_COMMIT=c0c2ee35e6d4d3bff4d39c6246ac46636434feb8
-GE_PROTON_RELEASE=GE-Proton11-11
-# Plus GE master commits cherry-picked into patches/ (-x): 98efe1cd, e15b1e15 (wine, in tier 2), bbef7006 (lsteamclient).
+GE_PROTON_COMMIT=f85547f0ea51ac356ab42b4de57b927b0044cc85
+GE_PROTON_RELEASE=GE-Proton11-12
+# The GE master commits 11-11.1 cherry-picked early (98efe1cd, e15b1e15, bbef7006) are in GE-Proton11-12.
 VALVE_WINE_BRANCH=bleeding-edge
-VALVE_WINE_COMMIT=c53678ab22a85f0fad3588dd34f0452a463bd015
+VALVE_WINE_COMMIT=fda79a585939fb7512dc220a11249f9ffe825fcf
 CACHYOS_RELEASE=cachyos-11.0-20261015-slr
 CACHYOS_WINE_BRANCH=cachyos_11.0_20261014/main
 CACHYOS_WINE_COMMIT=cd14106e4fc0f96006005b07985e49cc1517e9c0
+# Plus two commits from the unreleased cachyos_11.0_20261014/dev (c3808057d6), in tier 3:
+# b3795230 (winebus.sys HID serial), 447acb9a (hidclass.sys multi-TLC ids).
 WINE_REPO=https://github.com/The412Banner/proton-wine
-WINE_BRANCH=banner-proton/11.11
-WINE_TIER_TAGS="bp-11.11-tier1 bp-11.11-tier2 bp-11.11-tier3 bp-11.11-tier4 bp-11.11-tier5 bp-11.11-tier6 bp-11.11-tier7"
+WINE_BRANCH=banner-proton/11.12
+WINE_TIER_TAGS="bp-11.12-tier1 bp-11.12-tier2 bp-11.12-tier3 bp-11.12-tier4 bp-11.12-tier5 bp-11.12-tier6 bp-11.12-tier7"
 # Wine patches GE added after tier 2 was made, committed on top of the branch (tags, in order).
 # verify-tier2.sh expects a fresh run of GE's wine section to equal tier 2 plus these.
-# None on banner-proton/11.11: tier 2 was made from this repo's protonprep (GE-Proton11-11 + 98efe1cd, e15b1e15).
+# None on banner-proton/11.12: tier 2 was made from this repo's protonprep (GE-Proton11-12, unmodified).
 WINE_TIER2_FOLLOWUPS=""
-# DXVK: GE-Proton11-11's pin (v3.1.1-134), unchanged since 11-10.
-DXVK_COMMIT=2cb40186c43d617b5bd349a3756721aa4bd24b6d
-# FEX: GE-Proton11-11's pin 741e146f (FEX-2610-30), unchanged since 11-10.
+# DXVK: GE-Proton11-12's pin (v3.1.1-174).
+DXVK_COMMIT=f863776806824486d709fee16ea619c03e22def4
+# FEX: GE-Proton11-12's pin 02e24ca5 (FEX-2610-116), with patches/fex on top.
 STEAMRT_IMAGE=registry.gitlab.steamos.cloud/proton/steamrt4/sdk/arm64-llvm:4.0.20260714.251823-0
-# The wineserver protocol (protocol.def and its generated headers) must equal this commit's.
-WINE_PROTOCOL_BASE=5130c2882671e75841caa26288669ac5ae14c9b7
-# Tier 5: DroidDeck's esync patch (repository, path @ commit).
+# The wineserver protocol (protocol.def and its generated headers) must equal this commit's (tier 4).
+WINE_PROTOCOL_BASE=a7caaeb2abad688e7c0a4d16b74188bf73d61403
+# Tier 5: DroidDeck's esync patch (repository, path @ commit), ported to GE-Proton11-12's in-process
+# mutex changes on banner-proton/11.12 (see the tier 5 commit).
 DROIDDECK_ESYNC_PATCH="Droid-Deck/DroidDeck-Components droiddeck-esync/patches/valve-11/0001-droiddeck-esync.patch@780ab619de"
 # Tier 6: Arihany's SD card (noexec, force_anon) and drive-root copy fixes, from proton-wine proton_11.0.
 ARIHANY_FIXES_SOURCE="The412Banner/proton-wine proton_11.0@497c384f"

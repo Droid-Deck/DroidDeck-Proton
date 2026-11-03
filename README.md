@@ -22,36 +22,44 @@ them can be bisected or turned off on its own.
 
 | Tier | Contents | Tag |
 |---|---|---|
-| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.11-tier1` |
-| 2 | Everything GE-Proton11-11 applies to Wine, plus two GE fixes from after 11-11 | `bp-11.11-tier2` |
-| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.11-tier3` |
-| 4 | Our portable fixes from the Bannerlator layers | `bp-11.11-tier4` |
-| 5 | DroidDeck esync, built in | `bp-11.11-tier5` |
-| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.11-tier6` |
-| 7 | .NET mod loaders on ARM64 (upstream Wine fix, since 11-11.2) | `bp-11.11-tier7` |
+| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.12-tier1` |
+| 2 | Everything GE-Proton11-12 applies to Wine | `bp-11.12-tier2` |
+| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.12-tier3` |
+| 4 | Our portable fixes from the Bannerlator layers | `bp-11.12-tier4` |
+| 5 | DroidDeck esync, built in | `bp-11.12-tier5` |
+| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.12-tier6` |
+| 7 | .NET mod loaders on ARM64 (upstream Wine fix, since 11-11.2) | `bp-11.12-tier7` |
 
 Up to 11-10.1 tier 7 was the DirectShow FMV row order fix. GE-Proton11-11 carries the same fix
 (`ge-video-rework/0096`), so it is part of tier 2 now, and tier 7 is a new fix since 11-11.2.
 
 Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine), branch
-`banner-proton/11.11` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
+`banner-proton/11.12` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
 
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-11.11)</b></summary>
+<summary><b>Pins (GE-Proton11-12 base)</b></summary>
 
 | Component | Commit |
 |---|---|
-| GE-Proton (`proton-ge-custom` tag `GE-Proton11-11`) | `c0c2ee35e6d4d3bff4d39c6246ac46636434feb8` |
-| DXVK (same as GE: v3.1.1-134) | `2cb40186c43d617b5bd349a3756721aa4bd24b6d` |
-| Valve Wine `bleeding-edge` (same as GE, 2026-10-16) | `c53678ab22a85f0fad3588dd34f0452a463bd015` |
-| FEX (same as GE: `FEX-2610-30`) | `741e146fdf5a89517e1a67e3c899907cfba6131a` |
+| GE-Proton (`proton-ge-custom` tag `GE-Proton11-12`) | `f85547f0ea51ac356ab42b4de57b927b0044cc85` |
+| DXVK (same as GE: v3.1.1-174) | `f863776806824486d709fee16ea619c03e22def4` |
+| Valve Wine `bleeding-edge` (same as GE, 2026-10-31 + later commits) | `fda79a585939fb7512dc220a11249f9ffe825fcf` |
+| FEX (same as GE: `FEX-2610-116`, plus `patches/fex`) | `02e24ca5c01ed0c864466ed573db347336f70170` |
 | CachyOS Wine `cachyos_11.0_20261014/main` (release `cachyos-11.0-20261015-slr`) | `cd14106e4fc0f96006005b07985e49cc1517e9c0` |
-| DroidDeck-Proton Wine `banner-proton/11.11` (+ the winex11 offscreen-check cache) | `bab12909e99bdab9fc4820d12cd0ce1f23c6cd77` |
+| CachyOS Wine `cachyos_11.0_20261014/dev` (unreleased; two HID commits in tier 3) | `c3808057d6` |
+| DroidDeck-Proton Wine `banner-proton/11.12` (+ the winex11 offscreen-check cache) | `303894db765bad9936de9a532cb833dada939d58` |
 
-vkd3d-proton, vkd3d, d7vk, dxvk-nvapi, dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
-GE-Proton11-11's pins. DXVK, Valve Wine and FEX did not change from 11-10.1. 11-11.2 is 11-11.1 plus
+vkd3d-proton (v3.1), vkd3d, d7vk, dxvk-nvapi (v0.9.3), dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
+GE-Proton11-12's pins.
+
+The move to GE-Proton11-12 carries every fix of 11-11.11 below: tiers 3–7 and the offscreen-check cache are
+cherry-picked onto `banner-proton/11.12` unchanged except the esync tier (ported, see tier 5), and the deferred
+Wine and FEX patches apply at build time as before. The 32-bit lost wake fix (11-11.5) is rebased onto GE's newer
+stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now.
+
+History on GE-Proton11-11: 11-11.2 is 11-11.1 plus
 tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch. 11-11.4 is 11-11.3 plus Android shared-storage file ownership.
 11-11.5 is 11-11.4 plus the 32-bit lost wake fix (Battle.net freezes). 11-11.6 is 11-11.5 plus the winex11
 offscreen-check cache for DroidDeck's Performance mode: off unless `WINE_OFFSCREEN_CHECK_MS` is set (DroidDeck sets
@@ -75,26 +83,35 @@ they were built for, as on Valve's Proton. A loader that starts a 32-bit game su
 <details>
 <summary><b>Tier 2 – GE-Proton</b></summary>
 
-All of GE-Proton's Wine patching at `GE-Proton11-11` (`c0c2ee35`) plus two later GE fixes (below), applied by GE's own `protonprep`
+All of GE-Proton's Wine patching at `GE-Proton11-12` (`f85547f0`), applied by GE's own `protonprep`
 Wine section on tier 1, one commit per section: configure revert, EM-11 wine-wayland + wineopenxr + EM fixups,
 wine-staging (with GE's exclusions and rebased sets), game patches, hotfixes, pending upstream patches
 and GE's custom patches (FSR, Reflex, OptiScaler, video rework, DS5 haptics, Bluetooth LE, …). Everything
 applied cleanly. The `Verify wine tier 2` workflow re-runs GE's section on tier 1 and checks the result
 matches tier 2 plus its follow-ups.
 
-New in GE-Proton11-11 (hotfix): games no longer freeze when a video is skipped while MPEG-1 audio plays
+New in GE-Proton11-12:
+- Valve Wine bleeding-edge 2026-10-31 and later: XInput rescans controllers only when a device could have
+  changed (replaces the Far Cry 4 and Witcher 3 hacks), thread pool worker timeout 60 s, Voice Capture DSP
+  (`mfwmaaec`) audio capture, HID input reports cut to their declared length
+- controllers: DualSense haptics and adaptive triggers together over USB in Final Fantasy VII Rebirth and the
+  Horizon games (GE #860), Armored Core VI through the Steam Input fallback, `PROTON_STEAM_INPUT_XBOX_PROMPTS`
+  (GE #841), Where Winds Meet touchpad (GE #829)
+- windowing: Hyprland fullscreen regression (GE #871), Fcitx5 IME freeze on Wine-Wayland (GE #798), a present/focus
+  deadlock (GE #908), animated cursors (GE #919), X11 pointer-grab hang (GE #920, Syrupdesu), Cinnamon title bars
+  (GE #767), DayZ device creation on Wayland with an OpenXR runtime installed (GE #852)
+- video: MSFS 2024 intro speed (GE #389), AAC intros stopping (GE #882), The Godfather FMV flicker (GE #909, AITUS95),
+  arcade and Konami movie fixes (aderumier), khdays-port cutscene deadlock (GE #899), VRChat RTSP streams (l12436)
+- ntsync: a mutex a process closed while one of its threads still waited on it is abandoned when that thread dies
+  (Jason Eggleston, WineHQ 60524)
+- the three GE master fixes 11-11.1 took early are part of it: the Space Marine 2 stale-alert fix (now with its
+  test, GE `960acd0a`), winewayland OpenVR/OpenXR device extensions (GE #852), lsteamclient's Sony fallback
+
+Earlier, in GE-Proton11-11 (hotfix): games no longer freeze when a video is skipped while MPEG-1 audio plays
 (GE #865), MPEG-1 video through AMStream no longer upside down (GE #863), no heap corruption from
 scaled video frames (GE #864, aderumier), vkd3d-proton no longer trips Easy Anti-Cheat in Star Citizen
 and Hunt: Showdown (GE #858), Star Citizen AMD AGS override removed, protonfixes update (Star Citizen
 .NET 4.8, mod loaders, Windows version re-applied after winetricks).
-
-Taken from GE's master after 11-11 (cherry-picked with `-x` into this repo's `protonprep`):
-- ntdll: take the in-flight alert when a `RtlWaitOnAddress()` wait times out (Space Marine 2 crash after
-  long play; from proton-je, Jason Eggleston) – GE `98efe1cd`
-- winewayland: advertise the OpenVR/OpenXR Vulkan device pseudo-extensions like winex11 (VR games on
-  Wine's Wayland driver) – GE `e15b1e15`, GE #852
-- lsteamclient: keep the automatic PlayStation (Sony) Steam Input fallback when Steam Input is off for
-  the game but on globally – GE `bbef7006` (lsteamclient patch 0017, applied at build time)
 
 Earlier, in GE-Proton11-10: Valve Wine bleeding-edge 2026-10-16 (upstream syscall emulation for EAC/EOS
 launchers, x86_64 only), ACE anti-cheat driver fixes (ntoskrnl, lsass SamSs stub; Arknights: Endfield),
@@ -103,16 +120,17 @@ controller XInput fallback no longer rescanning HID devices on every poll, Bluet
 rumble through the fallback, KWin per-monitor HDR state and owned-popup destruction fixes
 (`em-fixups/0071`, `0072`), MonoGame song replay fix (`ge-video-rework/0093`, `0094`).
 
-GE's non-Wine changes arrive through the `ge-master` merge: DXVK v3.1.1-134, D7VK rebased on it,
-vkd3d-proton synchronization fix, FEX-2610-30, and the `proton` script's controller defaults.
+GE's non-Wine changes arrive through the merge of `GE-Proton11-12`: DXVK v3.1.1-174 (command submission
+throttling and memory eviction rework, present timing fixes), the D7VK DirectDraw/D3D7 rework, VKD3D-Proton 3.1,
+DXVK-NVAPI 0.9.3, FEX-2610-116, and the `proton` script's controller defaults.
 
 </details>
 
 <details>
 <summary><b>Tier 3 – CachyOS</b></summary>
 
-Cherry-picked (`-x`) from CachyOS Wine (the first 18 carried from 11-10.1 and still in CachyOS
-`cd14106e`, release `cachyos-11.0-20261015-slr`):
+Cherry-picked (`-x`) from CachyOS Wine, all still in CachyOS `cd14106e` (release `cachyos-11.0-20261015-slr`),
+carried unchanged from 11-11.11, plus two from CachyOS's unreleased `cachyos_11.0_20261014/dev` (`c3808057d6`):
 
 - ntdll: `WINE_DISABLE_SFN` option (Yakuza 5 cutscenes) – Pedro Nishiyama
 - win32u: opaque webviews for Wuthering Waves – NelloKudo
@@ -127,8 +145,12 @@ Cherry-picked (`-x`) from CachyOS Wine (the first 18 carried from 11-10.1 and st
 - setupapi: initialize the Service value size when checking for winehid devices – M0n7y5 (new in 20261014)
 - crypt32: keep the order of authenticated attributes when verifying signatures, with tests (WineHQ MR
   11824: FL Studio, Genshin Impact / Zenless Zone Zero CN editions) – Michael Nelson (new in 20261015)
+- winebus.sys: an error for IOCTL_HID_GET_STRING when a device has no serial number; hidclass.sys: multi-TLC
+  child devices named after the FDO instance id, not the serial number – Ivo Ivanov (from the dev branch, new in 11-12)
 
-**Not picked:** anything GE or Valve Wine already carries (CachyOS 20261014's crypt32 certificate-chain
+**Not picked:** the dev branch's setupapi "fail `SetupDiGetDeviceInterfaceAlias` instead of aborting" (GE carries the
+same author's full implementation, `proton-ds5-haptic/0102`, Fabian Wosar); its winepipewire/mmdevapi hotplug and USB
+instance-id series and coreaudio (CachyOS's audio stack); anything GE or Valve Wine already carries (CachyOS 20261014's crypt32 certificate-chain
 and schannel fixes, the ACE anti-cheat fixes); win32u "don't decorate maximized windows" (same line as GE's
 frameless-window change), and CachyOS 20261015's revert of it; CachyOS 20261015's winewayland owned-popup
 reparenting (written against CachyOS's wine-wayland, conflicts with GE's EM-11 tree); x86_64-only code (EAC/EOS syscall
@@ -162,7 +184,9 @@ fixes Valve Wine already has, and everything Android/bionic-specific.
 
 `droiddeck-esync/patches/valve-11/0001-droiddeck-esync.patch` from
 [Droid-Deck/DroidDeck-Components](https://github.com/Droid-Deck/DroidDeck-Components) `780ab619de`
-(maxjivi05), applied unchanged. Adds eventfd/shared-memory sync to wineserver and ntdll (Elizabeth
+(maxjivi05). On `banner-proton/11.12` it is ported to GE-Proton11-12's in-process mutex change (Jason Eggleston,
+GE `6161ec53`): the client cache entry keeps both GE's serial and esync's shared-memory index, and the server destroys
+an esync object before GE's ntsync orphan check. Adds eventfd/shared-memory sync to wineserver and ntdll (Elizabeth
 Figura's esync design), so no separate esync pack is needed. Sync order stays ntsync → fsync → esync
 (`WINEESYNC`) → server; the log says `droiddeck-esync: up and running.` when esync is used. No wineserver
 request or ntdll.so export changes (CI checks both).
