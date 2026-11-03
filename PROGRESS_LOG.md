@@ -19,7 +19,10 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 - **Commits:** `ef7f0313` merge, `0e86e5c0` wine/PINS/README/i386 patch, `028c2a8c` PR #9. VERSION stays 11-11.11 (bump at the release cut).
 - **CI run 1** (headSha `1520c23a`): Verify wine tier 2 41667549700 **green** (a fresh GE-Proton11-12 run on tier 1 reproduces `bp-11.12-tier2` exactly). Build 41667555200 **failed** in all four groups at "Prepare sources": GE's own `patches/protonfixes/0003` (Kingdoms of Amalur) is already in the protonfixes pin GE bumped to (`28a02c25`), `patch` skips the files and exits 1, and prep.sh treats that as fatal (GE's CI ignores it). The "Wine protocol unchanged" job (protocol + tier 6/7 + deferred patch source markers) passed.
 - **Fix:** prep.sh skips a patch that reverses cleanly ("already in the tree, skipped") and still fails on anything else. Checked locally on protonfixes `28a02c25` and the rest of the prep section.
-- **CI run 2:** pending.
+- **CI run 2** 41669299861 (headSha `7c3a3659`, still named 11-11.11): prep passed; FEX (with PR #9) and media groups green, the rest still building when the user chose the name.
+- **User decision (2026-11-03):** "make it 11-12.1 and rebuild": VERSION 11-12.1 now, so the test build sits next to 11-11.11 in Steam (instead of keeping 11-11.11 until the release cut). Run 3 is queued behind run 2 (same concurrency group) and reuses its group caches (VERSION is not in the cache keys).
+- **Components:** the GE-Proton11-12 esync pack (same port, series `ge-11`, branch `fix/esync-ge-11-12` `cf6e67ce`) built in Components run 41671479709: control reproduces GE's ntdll.so and wineserver, smoke test passed (esstress: stock 1 failure, pack 0); Test run 41671485778 green. Not published (branch).
+- **CI run 3:** pending.
 - **Device test plan (user's yes before install):** DiRT 3 or Showdown (telemetry), Battle.net (rebased 32-bit wake fix), a game from the SD card, NINJA GAIDEN (FMV), DOOM (2016), one controller game; logcat FATAL check; esync in the session log.
 - **Resume:** branch and wine tags are pushed; next is the CI run, then the device test.
 
