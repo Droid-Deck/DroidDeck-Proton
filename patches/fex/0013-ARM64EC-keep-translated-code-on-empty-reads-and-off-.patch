@@ -1,0 +1,504 @@
+From 953b6fd1ebf943e4f9fda72a20b44febaa219fe0 Mon Sep 17 00:00:00 2001
+From: K11MCH1 <81425424+K11MCH1@users.noreply.github.com>
+Date: Sat, 31 Oct 2026 09:32:03 +0900
+Subject: [PATCH] ARM64EC: keep translated code on empty reads and off Wine's
+ memory lock
+
+Under Wine, a few FEX paths that are cheap on Linux become calls that take
+Wine's global virtual memory lock, and one invalidates far more than it
+should:
+
+- After a successful NtReadFile, FEX invalidates translated code in the
+  destination buffer. A zero-length read with a NULL buffer, which is how
+  programs poll a pipe or a socket, reached InvalidateAlignedInterval with
+  address 0, which means the whole process (the FlushInstructionCache(NULL)
+  rule). The read notification now returns early for NULL or empty buffers
+  and for reads into memory outside FEX's executable intervals, instead of
+  taking the code invalidation lock for every data read.
+- The code buffer starts at its 128 MB maximum: each growth (16, 32, 64 MB)
+  discarded all translated code.
+- VirtualDontNeed zeroes memory with MEM_RESET, which Wine turns into one
+  madvise, instead of VirtualQuery + decommit + recommit.
+- Compiled and linked blocks flush the instruction cache with dc cvau /
+  ic ivau, as on Linux, instead of FlushInstructionCache, a system call plus
+  FEX's own invalidation callback.
+- Executable range lookups ask the OS (VirtualQuery) only for writable
+  executable ranges, where a protector can hide inaccessible pages, and on
+  misses.
+- Opt-in counters (DDO_FEX_DIAG=1 with FEX_SILENTLOG=0) of invalidations by
+  source, cache loads, compiles and full code-cache clears, logged every 5 s.
+
+Measured with Dungeons & Dragons Online on a phone: a world load went from
+117 s to 54.5 s with the memory paths, and ENTER to in the world from 50 s
+to 4.1 s with the read fix; full code-cache clears went from up to 7 per
+5 s to none, and the game thread's waits on Wine's virtual_mutex during a
+load from 4127 samples to 129.
+
+The rpmalloc half (commit once, never decommit under MinGW) is a separate
+patch for External/rpmalloc.
+---
+ CodeEmitter/CodeEmitter/Buffer.h              | 28 +++++++
+ FEXCore/Source/Interface/Core/Core.cpp        | 10 +++
+ FEXCore/Source/Interface/Core/JIT/JIT.cpp     |  3 +
+ FEXCore/Source/Utils/ArchHelpers/Arm64.cpp    |  3 +-
+ .../include/FEXCore/Utils/AllocatorHooks.h    | 11 +--
+ FEXCore/include/FEXCore/Utils/DiagCounters.h  | 77 +++++++++++++++++++
+ Source/Windows/ARM64EC/Module.cpp             | 23 ++++++
+ Source/Windows/Common/InvalidationTracker.cpp | 37 ++++++---
+ Source/Windows/Common/InvalidationTracker.h   |  2 +
+ 9 files changed, 177 insertions(+), 17 deletions(-)
+ create mode 100644 FEXCore/include/FEXCore/Utils/DiagCounters.h
+
+diff --git a/CodeEmitter/CodeEmitter/Buffer.h b/CodeEmitter/CodeEmitter/Buffer.h
+index 602eeb674..752ed3f60 100644
+--- a/CodeEmitter/CodeEmitter/Buffer.h
++++ b/CodeEmitter/CodeEmitter/Buffer.h
+@@ -63,7 +63,35 @@ public:
+   }
+ 
+   static void ClearICache(void* Begin, std::size_t Length) {
++#ifdef _WIN32
++    // On Windows targets __builtin___clear_cache becomes FlushInstructionCache: under Wine a system call, plus a
++    // callback into FEX's own code invalidation, for every compiled or linked block. Wine always runs us on Linux,
++    // which lets user space maintain the caches itself, as compiler-rt does there.
++    static const uint64_t CTR = [] {
++      uint64_t Value;
++      __asm__ volatile("mrs %0, ctr_el0" : "=r"(Value));
++      return Value;
++    }();
++    const uintptr_t Start = reinterpret_cast<uintptr_t>(Begin);
++    const uintptr_t End = Start + Length;
++    if (!(CTR & (1ULL << 28))) { // IDC clear: clean the data cache to the point of unification
++      const uintptr_t Line = 4ULL << ((CTR >> 16) & 0xf);
++      for (uintptr_t Addr = Start & ~(Line - 1); Addr < End; Addr += Line) {
++        __asm__ volatile("dc cvau, %0" ::"r"(Addr) : "memory");
++      }
++    }
++    __asm__ volatile("dsb ish" ::: "memory");
++    if (!(CTR & (1ULL << 29))) { // DIC clear: invalidate the instruction cache
++      const uintptr_t Line = 4ULL << (CTR & 0xf);
++      for (uintptr_t Addr = Start & ~(Line - 1); Addr < End; Addr += Line) {
++        __asm__ volatile("ic ivau, %0" ::"r"(Addr) : "memory");
++      }
++      __asm__ volatile("dsb ish" ::: "memory");
++    }
++    __asm__ volatile("isb" ::: "memory");
++#else
+     __builtin___clear_cache(static_cast<char*>(Begin), static_cast<char*>(Begin) + Length);
++#endif
+   }
+ 
+   size_t GetCursorOffset() const {
+diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
+index b11fae62d..cd28ff73d 100644
+--- a/FEXCore/Source/Interface/Core/Core.cpp
++++ b/FEXCore/Source/Interface/Core/Core.cpp
+@@ -8,6 +8,7 @@ desc: Glues Frontend, OpDispatcher and IR Opts & Compilation, LookupCache, Dispa
+ $end_info$
+ */
+ 
++#include <FEXCore/Utils/DiagCounters.h>
+ #include <cstdint>
+ #ifdef ZYDIS_DISASSEMBLER
+ #include <Zydis/Zydis.h>
+@@ -353,10 +354,17 @@ void ContextImpl::SetFlagsFromCompactedEFLAGS(FEXCore::Core::InternalThreadState
+ }
+ 
+ bool ContextImpl::InitCore() {
++#ifdef _WIN32
++  // Every growth of the code buffer (16, 32, 64, 128 MB) discards all translated code, which then has to be fetched,
++  // relocated and linked again block by block: seconds of stall for a large game, several times in its first
++  // minutes. Under Wine the full buffer only costs address space until code is written, so start at the maximum.
++  StartMaximalCodeBuffer();
++#else
+   if (CodeCache.IsGeneratingCache || FEXCore::Config::Get_ENABLECODECACHINGWIP()) {
+     // Start with a larger code buffer to avoid resizes that would discard code
+     StartMaximalCodeBuffer();
+   }
++#endif
+ 
+   // Initialize the CPU core signal handlers & DispatcherConfig
+   Dispatcher = FEXCore::CPU::Dispatcher::Create(this);
+@@ -494,6 +502,7 @@ void ContextImpl::OnCodeBufferAllocated(const fextl::shared_ptr<CPU::CodeBuffer>
+ 
+ void ContextImpl::ClearCodeCache(FEXCore::Core::InternalThreadState* Thread, bool NewCodeBuffer) {
+   FEXCORE_PROFILE_INSTANT("ClearCodeCache");
++  FEXCore::Diag::Note(FEXCore::Diag::ClearCodeCache);
+ 
+   if (NewCodeBuffer) {
+     // Allocate new CodeBuffer + L3 LookupCache and clear L1+L2 caches
+@@ -1103,6 +1112,7 @@ void ContextImpl::InvalidateThreadCachedCodeRange(FEXCore::Core::InternalThreadS
+   Thread->FrontendDecoder->ResetExecutableRangeCache();
+ 
+   if (Thread->LookupCache->InvalidateCacheRange(Start, Length)) {
++    FEXCore::Diag::Note(FEXCore::Diag::ErasedRanges, Length);
+     FEXCORE_PROFILE_SCOPED("InvalidateCallRet");
+ 
+     // This may cause access violations in the thread on Windows as zeroing is not atomic, this is handled by the frontend
+diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+index ef7e33299..230ae5133 100644
+--- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
++++ b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
+@@ -11,6 +11,7 @@ desc: Main glue logic of the arm64 splatter backend
+ $end_info$
+ */
+ 
++#include <FEXCore/Utils/DiagCounters.h>
+ #include "Interface/Context/Context.h"
+ #include "Interface/Core/LookupCache.h"
+ #include "Interface/Core/Dispatcher/Dispatcher.h"
+@@ -878,6 +879,7 @@ CodeBuffer::CodeBufferAllocation Arm64JITCore::AllocateCodeBufferInSharedCache(s
+ 
+ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry, uint64_t Size, bool SingleInst, const FEXCore::IR::IRListView* IR,
+                                                    FEXCore::Core::DebugData* DebugData, bool CheckTF) {
++  FEXCore::Diag::Note(FEXCore::Diag::CompiledBlocks);
+   FEXCORE_PROFILE_SCOPED("Arm64::CompileCode");
+ 
+   const auto PrevNumAllocations = Relocations.size();
+@@ -1200,6 +1202,7 @@ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry, uint64_t Size
+ }
+ 
+ CPUBackend::CompiledCode Arm64JITCore::LoadCachedCode(std::span<const uint8_t> HostBytes) {
++  FEXCore::Diag::Note(FEXCore::Diag::LoadedBlocks, HostBytes.size());
+   // we stored it aligned, better still be?
+   LOGMAN_THROW_A_FMT(HostBytes.size() % 16 == 0, "Needs to be 16B aligned!");
+   auto AllocatedInfo = AllocateCodeBufferInSharedCache(HostBytes.size());
+diff --git a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
+index 01e5bb22e..4e174a0c1 100644
+--- a/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
++++ b/FEXCore/Source/Utils/ArchHelpers/Arm64.cpp
+@@ -9,6 +9,7 @@
+ #include <FEXCore/Utils/LogManager.h>
+ #include <FEXCore/Utils/Telemetry.h>
+ #include <FEXCore/Utils/ArchHelpers/Arm64.h>
++#include <CodeEmitter/Buffer.h>
+ 
+ #include <atomic>
+ #include <cstdint>
+@@ -120,7 +121,7 @@ static constexpr uint32_t GetRmReg(uint32_t Instr) {
+ }
+ 
+ static void ClearICache(void* Begin, std::size_t Length) {
+-  __builtin___clear_cache(static_cast<char*>(Begin), static_cast<char*>(Begin) + Length);
++  ARMEmitter::Buffer::ClearICache(Begin, Length);
+ }
+ 
+ static __uint128_t LoadAcquire128(uint64_t Addr) {
+diff --git a/FEXCore/include/FEXCore/Utils/AllocatorHooks.h b/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
+index c4cadf40a..feaf848b9 100644
+--- a/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
++++ b/FEXCore/include/FEXCore/Utils/AllocatorHooks.h
+@@ -71,13 +71,10 @@ inline void VirtualFree(void* Ptr, size_t Size) {
+ }
+ 
+ inline void VirtualDontNeed(void* Ptr, size_t Size, bool Recommit = true) {
+-  // Zero the page-aligned region, preserving permissions.
+-  MEMORY_BASIC_INFORMATION Info;
+-  ::VirtualQuery(Ptr, &Info, sizeof(Info));
+-  ::VirtualFree(Ptr, Size, MEM_DECOMMIT);
+-  if (Recommit) {
+-    ::VirtualAlloc(Ptr, Size, MEM_COMMIT, Info.Protect);
+-  }
++  // Zero the page-aligned region, preserving permissions. Wine implements MEM_RESET as madvise(MADV_DONTNEED), so
++  // these private pages read back as zeros and their memory goes back to the system: what a decommit and recommit
++  // achieve, in one call instead of three that each take Wine's global virtual memory lock.
++  ::VirtualAlloc(Ptr, Size, MEM_RESET, PAGE_NOACCESS);
+ }
+ 
+ inline bool VirtualProtect(void* Ptr, size_t Size, ProtectOptions options) {
+diff --git a/FEXCore/include/FEXCore/Utils/DiagCounters.h b/FEXCore/include/FEXCore/Utils/DiagCounters.h
+new file mode 100644
+index 000000000..2bba1783f
+--- /dev/null
++++ b/FEXCore/include/FEXCore/Utils/DiagCounters.h
+@@ -0,0 +1,77 @@
++// SPDX-License-Identifier: MIT
++// DDO Mobile: opt-in counters of code invalidations by source, cache loads, compiles and full clears, logged every 5 s.
++// Off unless DDO_FEX_DIAG is set (with FEX_SILENTLOG=0 so the summaries reach the log); disabled, Note is one branch.
++#pragma once
++#include <FEXCore/Utils/LogManager.h>
++#include <FEXCore/fextl/fmt.h>
++#include <FEXCore/fextl/string.h>
++
++#include <atomic>
++#include <chrono>
++#include <cstdint>
++#include <cstdlib>
++
++namespace FEXCore::Diag {
++enum Counter {
++  ReadFile,
++  ReadNull,
++  ReadData,
++  MemFree,
++  MemAlloc,
++  MemProtect,
++  Unmap,
++  FlushIC,
++  FlushICHeavy,
++  Dirty,
++  GuestRange,
++  ExecFault,
++  NonImageView,
++  RWXFault,
++  ExecFlags,
++  ErasedRanges,
++  LoadedBlocks,
++  CompiledBlocks,
++  ClearCodeCache,
++  Count
++};
++inline constexpr const char* Names[Count] = {"readfile",  "readnull",   "readdata",   "free",     "alloc",  "protect", "unmap",
++                                             "flushic",   "flushicheavy", "dirty",    "guestrange", "execfault", "nonimage", "rwxfault",
++                                             "execflags", "ERASED",     "LOADED",     "COMPILED", "CLEARALL"};
++inline const bool Enabled = [] {
++  const char* Value = getenv("DDO_FEX_DIAG");
++  return Value && Value[0] && Value[0] != '0';
++}();
++inline std::atomic<uint64_t> Calls[Count];
++inline std::atomic<uint64_t> Bytes[Count];
++inline std::atomic<int64_t> LastReport;
++
++inline void MaybeReport() {
++  const int64_t Now = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
++  int64_t Last = LastReport.load(std::memory_order_relaxed);
++  if (Now - Last < 5000 || !LastReport.compare_exchange_strong(Last, Now)) {
++    return;
++  }
++  fextl::string Line = "[ddo-diag]";
++  for (int i = 0; i < Count; i++) {
++    const auto C = Calls[i].exchange(0, std::memory_order_relaxed);
++    const auto B = Bytes[i].exchange(0, std::memory_order_relaxed);
++    if (C) {
++      Line += fextl::fmt::format(" {}={}", Names[i], C);
++      if (B) {
++        Line += fextl::fmt::format("/{}KB", B >> 10);
++      }
++    }
++  }
++  LogMan::Msg::IFmt("{}", Line);
++}
++
++inline void Note(Counter C, uint64_t Size = 0) {
++  if (!Enabled) {
++    return;
++  }
++  Calls[C].fetch_add(1, std::memory_order_relaxed);
++  // Whole-process ranges would swamp the byte totals.
++  Bytes[C].fetch_add(Size < (uint64_t {1} << 48) ? Size : 0, std::memory_order_relaxed);
++  MaybeReport();
++}
++} // namespace FEXCore::Diag
+diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
+index 27319814f..747dd23b4 100644
+--- a/Source/Windows/ARM64EC/Module.cpp
++++ b/Source/Windows/ARM64EC/Module.cpp
+@@ -6,6 +6,7 @@ desc: Implements the ARM64EC BT module API using FEXCore
+ $end_info$
+ */
+ 
++#include <FEXCore/Utils/DiagCounters.h>
+ #include <FEXCore/fextl/fmt.h>
+ #include <FEXCore/Core/X86Enums.h>
+ #include <FEXCore/Core/SignalDelegator.h>
+@@ -642,6 +643,7 @@ static bool DropStaleNoExecBlock(FEXCore::Core::InternalThreadState* Thread) {
+ 
+   const uint64_t FirstPage = Rip & FEXCore::Utils::FEX_PAGE_MASK;
+   const uint64_t LastPage = (End - 1) & FEXCore::Utils::FEX_PAGE_MASK;
++  FEXCore::Diag::Note(FEXCore::Diag::ExecFault, LastPage - FirstPage + FEXCore::Utils::FEX_PAGE_SIZE);
+   InvalidationTracker->InvalidateAlignedInterval(FirstPage, LastPage - FirstPage + FEXCore::Utils::FEX_PAGE_SIZE, false);
+ 
+   Fault.FaultToTopAndGeneratedException = false;
+@@ -764,6 +766,7 @@ public:
+   }
+ 
+   void InvalidateGuestCodeRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) override {
++    FEXCore::Diag::Note(FEXCore::Diag::GuestRange, Length);
+     InvalidationTracker->InvalidateAlignedInterval(Start, Length, false);
+   }
+ 
+@@ -1053,6 +1056,7 @@ void NotifyMemoryAlloc(void* Address, SIZE_T Size, ULONG Type, ULONG Prot, BOOL
+   } else {
+     // MEM_RESET(_UNDO) ignores the passed permissions
+     if (!Status && !(Type & (MEM_RESET | MEM_RESET_UNDO))) {
++      FEXCore::Diag::Note(FEXCore::Diag::MemAlloc, Size);
+       InvalidationTracker->HandleMemoryProtectionNotification(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), Prot);
+     }
+     ThreadCreationMutex.unlock();
+@@ -1068,6 +1072,7 @@ void NotifyMemoryFree(void* Address, SIZE_T Size, ULONG FreeType, BOOL After, NT
+     ThreadCreationMutex.lock();
+   } else {
+     if (!Status) {
++      FEXCore::Diag::Note(FEXCore::Diag::MemFree, Size);
+       InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), true);
+     }
+     ThreadCreationMutex.unlock();
+@@ -1083,6 +1088,7 @@ void NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After,
+     ThreadCreationMutex.lock();
+   } else {
+     if (!Status) {
++      FEXCore::Diag::Note(FEXCore::Diag::MemProtect, Size);
+       InvalidationTracker->HandleMemoryProtectionNotification(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), NewProt);
+     }
+     ThreadCreationMutex.unlock();
+@@ -1110,6 +1116,7 @@ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Si
+     const uint64_t GuestSize = static_cast<uint64_t>(Size);
+ 
+     if (!HandleImageMap(GuestAddress) && IsLikelyMapViewNotification(GuestAddress, GuestSize, Prot)) {
++      FEXCore::Diag::Note(FEXCore::Diag::NonImageView, GuestSize);
+       InvalidationTracker->HandleMemoryProtectionNotification(GuestAddress, GuestSize, Prot);
+     }
+   }
+@@ -1126,6 +1133,7 @@ void NotifyUnmapViewOfSection(void* Address, BOOL After, NTSTATUS Status) {
+   if (!After) {
+     ThreadCreationMutex.lock();
+     auto [Start, Size] = InvalidationTracker->InvalidateContainingSection(reinterpret_cast<uint64_t>(Address), true);
++    FEXCore::Diag::Note(FEXCore::Diag::Unmap, Size);
+     if (Size) {
+       HandleImageUnmap(Start, Size);
+     }
+@@ -1140,6 +1148,7 @@ void FlushInstructionCacheHeavy(const void* Address, SIZE_T Size) {
+   }
+ 
+   std::scoped_lock Lock(ThreadCreationMutex);
++  FEXCore::Diag::Note(FEXCore::Diag::FlushICHeavy, Size);
+   InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
+ }
+ 
+@@ -1149,6 +1158,7 @@ void BTCpu64FlushInstructionCache(const void* Address, SIZE_T Size) {
+   }
+ 
+   std::scoped_lock Lock(ThreadCreationMutex);
++  FEXCore::Diag::Note(FEXCore::Diag::FlushIC, Size);
+   InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
+ }
+ 
+@@ -1158,6 +1168,7 @@ void BTCpu64NotifyMemoryDirty(void* Address, SIZE_T Size) {
+   }
+ 
+   std::scoped_lock Lock(ThreadCreationMutex);
++  FEXCore::Diag::Note(FEXCore::Diag::Dirty, Size);
+   InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
+ }
+ 
+@@ -1208,8 +1219,20 @@ void BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After
+     return;
+   }
+ 
++  // A read that wrote nothing - a zero-length, NULL-buffer poll of a pipe or socket - must not reach
++  // InvalidateAlignedInterval, where a NULL address means the whole process: games poll like that every frame. And a
++  // read into memory that cannot hold code has nothing to invalidate, so it need not stop every other thread for it.
+   if (After && Status == STATUS_SUCCESS) {
++    if (!Address || !Size) {
++      FEXCore::Diag::Note(FEXCore::Diag::ReadNull);
++      return;
++    }
++    if (!InvalidationTracker->IntersectsExecutable(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size))) {
++      FEXCore::Diag::Note(FEXCore::Diag::ReadData, Size);
++      return;
++    }
+     std::scoped_lock Lock(ThreadCreationMutex);
++    FEXCore::Diag::Note(FEXCore::Diag::ReadFile, Size);
+     InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
+   }
+ }
+diff --git a/Source/Windows/Common/InvalidationTracker.cpp b/Source/Windows/Common/InvalidationTracker.cpp
+index b9cfb25ff..64485c8a4 100644
+--- a/Source/Windows/Common/InvalidationTracker.cpp
++++ b/Source/Windows/Common/InvalidationTracker.cpp
+@@ -1,5 +1,6 @@
+ // SPDX-License-Identifier: MIT
+ 
++#include <FEXCore/Utils/DiagCounters.h>
+ #include <FEXCore/Utils/LogManager.h>
+ #include <FEXCore/Utils/TypeDefines.h>
+ #include <FEXCore/Utils/SignalScopeGuards.h>
+@@ -131,6 +132,7 @@ void InvalidationTracker::HandleProcessExecuteFlagsChange(ULONG Flags) {
+ 
+   // Invalidate all cached code: previously-compiled blocks may contain NoExec stubs for addresses
+   // that are now executable (or reference regions whose executability just changed).
++  FEXCore::Diag::Note(FEXCore::Diag::ExecFlags);
+   InvalidateIntervalInternalLocked(0, std::numeric_limits<uint64_t>::max());
+ }
+ 
+@@ -215,6 +217,13 @@ void InvalidationTracker::InvalidateAlignedInterval(uint64_t Address, uint64_t S
+   }
+ }
+ 
++bool InvalidationTracker::IntersectsExecutable(uint64_t Address, uint64_t Size) {
++  const auto AlignedBase = Address & FEXCore::Utils::FEX_PAGE_MASK;
++  const auto AlignedEnd = (Address + Size + FEXCore::Utils::FEX_PAGE_SIZE - 1) & FEXCore::Utils::FEX_PAGE_MASK;
++  std::shared_lock Lock(IntervalsLock);
++  return XIntervals.Intersect({AlignedBase, AlignedEnd});
++}
++
+ void InvalidationTracker::ReprotectRWXIntervals(uint64_t Address, uint64_t Size) {
+   ProtectRWXIntervalsInternal(Address, Size, false);
+ }
+@@ -233,6 +242,7 @@ bool InvalidationTracker::HandleRWXAccessViolation(FEXCore::Core::InternalThread
+     {
+       std::scoped_lock Lock(CTX.GetCodeInvalidationMutex());
+ 
++      FEXCore::Diag::Note(FEXCore::Diag::RWXFault, FEXCore::Utils::FEX_PAGE_SIZE);
+       InvalidateIntervalInternalLocked(FaultAddress & FEXCore::Utils::FEX_PAGE_MASK, FEXCore::Utils::FEX_PAGE_SIZE);
+ 
+       // Invalidate, then unprotect the faulting page with the compilation lock held to ensure that any racing invalidations are not dropped.
+@@ -288,11 +298,6 @@ static FEXCore::HLE::ExecutableRangeInfo ClampToAccessible(FEXCore::HLE::Executa
+ }
+ 
+ FEXCore::HLE::ExecutableRangeInfo InvalidationTracker::QueryExecutableRange(uint64_t Address) {
+-  MEMORY_BASIC_INFORMATION Info;
+-  if (!VirtualQuery(reinterpret_cast<LPCVOID>(Address), &Info, sizeof(Info))) {
+-    return {};
+-  }
+-
+   // Assumes IntervalsLock is held.
+   const auto BuildResult = [this](uint64_t Address) -> FEXCore::HLE::ExecutableRangeInfo {
+     const auto XResult = XIntervals.Query(Address);
+@@ -308,12 +313,26 @@ FEXCore::HLE::ExecutableRangeInfo InvalidationTracker::QueryExecutableRange(uint
+     return {XResult.Interval.Offset, XResult.Interval.End - XResult.Interval.Offset, false};
+   };
+ 
++  FEXCore::HLE::ExecutableRangeInfo Tracked;
+   {
+     std::shared_lock Lock(IntervalsLock);
+-    const auto Result = BuildResult(Address);
+-    if (Result.Size) {
+-      return ClampToAccessible(Result, Address, Info);
+-    }
++    Tracked = BuildResult(Address);
++  }
++
++  // This runs for every block compiled and every disk cache lookup, and under Wine a VirtualQuery takes its global
++  // virtual memory lock. Only writable executable regions - where protectors unpack code and flip protections behind
++  // FEX's back - can hide inaccessible pages from the intervals, so read-only executable ranges such as image code
++  // are answered from the intervals alone.
++  if (Tracked.Size && !Tracked.Writable) {
++    return Tracked;
++  }
++
++  MEMORY_BASIC_INFORMATION Info;
++  if (!VirtualQuery(reinterpret_cast<LPCVOID>(Address), &Info, sizeof(Info))) {
++    return {};
++  }
++  if (Tracked.Size) {
++    return ClampToAccessible(Tracked, Address, Info);
+   }
+ 
+   // The interval lists are only ever populated from allocation/protection notifications and from PE image
+diff --git a/Source/Windows/Common/InvalidationTracker.h b/Source/Windows/Common/InvalidationTracker.h
+index d2a80bcaa..b814fe7e0 100644
+--- a/Source/Windows/Common/InvalidationTracker.h
++++ b/Source/Windows/Common/InvalidationTracker.h
+@@ -32,6 +32,8 @@ public:
+   };
+   InvalidateContainingSectionResult InvalidateContainingSection(uint64_t Address, bool Free);
+   void InvalidateAlignedInterval(uint64_t Address, uint64_t Size, bool Free);
++  // Whether the range overlaps memory FEX treats as executable: translated code can only come from there.
++  bool IntersectsExecutable(uint64_t Address, uint64_t Size);
+   void ReprotectRWXIntervals(uint64_t Address, uint64_t Size);
+   bool HandleRWXAccessViolation(FEXCore::Core::InternalThreadState* Thread, uint64_t HostPC, uint64_t FaultAddress);
+ 
+-- 
+2.55.0.windows.5
+
