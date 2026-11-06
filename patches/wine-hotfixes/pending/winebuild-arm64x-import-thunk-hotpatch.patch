@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: maxjivi05 <maxjividen@gmail.com>
 Date: Fri, 6 Nov 2026 02:00:00 -0500
-Subject: [PATCH] winebuild: Give ARM64X import thunks the x86_64 hotpatch prologue.
+Subject: [PATCH] winebuild, ntdll: Give ARM64X import thunks the x86_64 hotpatch prologue.
 
 On x86_64, winebuild emits every -import export as a thunk that starts
 with the 8-byte hotpatch prologue (lea rsp,[rsp+0]) before jumping through
@@ -30,10 +30,50 @@ the bytes the prologue moves the jump into lie past the section and
 llvm-strip drops them. Grow VirtualSize to the end of the rewritten thunk
 when the raw data and section alignment already cover it, and leave the
 thunk alone otherwise.
----
- tools/winebuild/spec32.c | 275 +++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 275 insertions(+)
 
+ARM64EC callers go through arm64x_check_call, which follows a bare
+"jmp [iat]" to the native target. Let it step over the hotpatch prologue
+too, so these calls still skip the emulator.
+---
+ dlls/ntdll/signal_arm64ec.c |  10 +-
+ tools/winebuild/spec32.c    | 275 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 284 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/ntdll/signal_arm64ec.c b/dlls/ntdll/signal_arm64ec.c
+index 6a455c0919..ec60cc5a55 100644
+--- a/dlls/ntdll/signal_arm64ec.c
++++ b/dlls/ntdll/signal_arm64ec.c
+@@ -1939,7 +1939,7 @@ static void __attribute__((naked)) arm64x_check_call(void)
+          /* check for fast-forward sequence */
+          "ldr x17, .Lffwd_seq\n\t"
+          "cmp x16, x17\n\t"
+-         "b.ne .Lsyscall\n\t"
++         "b.ne .Lhotpatch\n\t"
+          "ldr x16, [x11, #8]\n\t"
+          "ldr x17, .Lffwd_seq + 8\n\t"
+          "eor x17, x16, x17\n\t"            /* compare only first two bytes */
+@@ -1949,6 +1949,12 @@ static void __attribute__((naked)) arm64x_check_call(void)
+          "lsr x9, x16, #16\n\t"
+          "add x11, x11, w9, sxtw\n\t"       /* add offset */
+          "ret\n"
++         ".Lhotpatch:\n\t"
++         "ldr x17, .Lhotpatch_seq\n\t"
++         "cmp x16, x17\n\t"
++         "b.ne .Lsyscall\n\t"
++         "add x11, x11, #8\n\t"
++         "b .Ljmp\n"
+          /* check for syscall sequence */
+          ".Lsyscall:\n\t"
+          "ldr w17, .Lsyscall_seq\n\t"
+@@ -1988,6 +1994,8 @@ static void __attribute__((naked)) arm64x_check_call(void)
+          "ret\n"
+          ".seh_endproc\n\t"
+ 
++         ".Lhotpatch_seq:\n\t"
++         ".byte 0x48, 0x8d, 0xa4, 0x24, 0, 0, 0, 0\n"
+          ".Lffwd_seq:\n\t"
+          ".byte 0x48, 0x8b, 0xc4\n\t"       /* mov  %rsp,%rax */
+          ".byte 0x48, 0x89, 0x58, 0x20\n\t" /* mov  %rbx,0x20(%rax) */
 diff --git a/tools/winebuild/spec32.c b/tools/winebuild/spec32.c
 index 062e65c73c..221827e1f9 100644
 --- a/tools/winebuild/spec32.c

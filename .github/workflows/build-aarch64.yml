@@ -270,6 +270,7 @@ jobs:
           has dlls/ntdll/unix/virtual.c "(is_machine_64bit( image_info->machine ) && (!disable_exe_aslr"
           has tools/winebuild/spec32.c "fixup_arm64x_import_thunks( data, st.st_size )"
           has tools/winebuild/spec32.c "pe_cover_rva( &pe, func, sizeof(hotpatch) + 6"
+          has dlls/ntdll/signal_arm64ec.c "ldr x17, .Lhotpatch_seq"
           exit $fail
 
   verify:
