@@ -2,6 +2,16 @@
 
 Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDeck (glibc Arch ARM rootfs + Valve's Steam client).
 
+## 2026-11-06
+
+### ARM64X import thunks get the x86_64 hotpatch prologue (branch `fix/arm64x-import-thunk-hotpatch`, test build, NOT merged)
+- **Why:** in 11-12.1 an x64 process sees 2993 exports across 34 DLLs (kernel32 800, user32 209, advapi32 200, shlwapi 218, imagehlp 72, evr 9, gdi32 58, ...) that start with a bare `jmp [iat]`, the shape of an inline hook. On x86_64 winebuild emits these `-import` exports as `lea rsp,[rsp+0]; jmp [iat]` (Wine bug 48938); on ARM64EC the linker builds the x64 thunk itself without it. Anti-tamper that checks export prologues refuses to start (Forza Horizon 6; research by TimmyTurner51, fh6-wine-fex).
+- **Fix:** wine `1806c211ff` on `maxjivi05/proton-wine` `droiddeck/arm64x-import-thunk-hotpatch` (on top of `banner-proton/11.12` `303894db`): `winebuild --builtin` reads the x64 view through the ARM64X dynamic relocations (export directory, IAT, and the delay-import descriptors that the x64 view relocates with delta fixups) and rewrites only 16-byte-aligned AMD64 slots that hold exactly `jmp [import slot]` plus uniform padding. The jump target is kept.
+- **Test-only repin:** `.gitmodules` and PINS point at the fork branch so CI can build it; the final home is a commit on `The412Banner/proton-wine` `banner-proton/11.12`.
+- **Host check (11-12.1 release DLLs, patched winebuild run on copies):** 34 aarch64-windows files change, 2924 slots rewritten, every jump keeps its target, 0 bytes changed outside the slots, 0 bare thunks left; all 785 x86_64-windows files unchanged; idempotent.
+- **Device (Retroid Pocket Duo, patched DLLs swapped into 11-12.1, originals restored after):** x64 probe scanning 8 system DLLs: hook-shaped exports 800/209/200/58/218/72/9 before, 0 after; forwarded calls (kernel32 -> kernelbase, imagehlp -> dbghelp and evr -> mfplat delay loads) correct in 3 of 3 runs. Little Nightmares, Subnautica and Moonlighter reach their menus.
+- **Not taken:** the fh6-wine-fex FEX patches (performance under `FEX_SMCCHECKS=full` only; they make `ReprotectRWXIntervals` a no-op in every SMC mode and change what `full` checks for all programs).
+
 ## 2026-11-03
 
 ### 11-12 rebase: GE-Proton11-12, Valve fda79a58, two CachyOS dev commits, PR #9 (rebase/11-12, CI pending, NOT device-tested)

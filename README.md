@@ -292,7 +292,8 @@ instead of `patches/protonprep-valve-staging.sh` and
 Elizabeth Figura (esync, fsync, ntsync) · maxjivi05 / DroidDeck (droiddeck-esync) ·
 Arihany and GameNative (SD card fixes) · Brendan Shanks, utkarshdalal, whatsupbros
 (.NET fix) · arusiasotto (WoW ARM64EC fix) · Dmage22 ([FEX-D2](https://github.com/Dmage22/FEX-D2), Blizzard loader fixes) · oldschoola
-([linux_maplestory](https://github.com/oldschoola/linux_maplestory), MapleStory research) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
+([linux_maplestory](https://github.com/oldschoola/linux_maplestory), MapleStory research) · TimmyTurner51
+([fh6-wine-fex](https://github.com/TimmyTurner51/fh6-wine-fex), ARM64X import thunk research) · FEX-Emu, DXVK, vkd3d-proton, dxvk-nvapi, d7vk and every
 patch author named in the commit history.
 
 ## License
