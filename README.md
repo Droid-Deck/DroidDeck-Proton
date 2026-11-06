@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-12.1)</b></summary>
+<summary><b>Pins (11-12.2)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -60,6 +60,11 @@ Wine and FEX patches apply at build time as before. The 32-bit lost wake fix (11
 stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. New in 11-12.1 besides GE-Proton11-12:
 two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
 code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
+
+11-12.2 is 11-12.1 plus the ARM64X import thunk fix (`patches/wine-hotfixes/pending/winebuild-arm64x-import-thunk-hotpatch.patch`):
+winebuild writes Microsoft's hotpatchable thunk shape into ARM64X DLLs and keeps the last thunk of a section inside it
+after strip, and ntdll's ARM64EC call check follows that shape, so x86-64 hooks on system DLL exports land and ARM64EC
+callers still skip the emulator.
 
 History on GE-Proton11-11: 11-11.2 is 11-11.1 plus
 tier 7. 11-11.3 is 11-11.2 plus the WoW ARM64EC game patch. 11-11.4 is 11-11.3 plus Android shared-storage file ownership.
