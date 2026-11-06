@@ -1,0 +1,92 @@
+From 31a5cb452ac313dcb827760ab44332e9f4de7ac2 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Fri, 6 Nov 2026 10:08:15 -0500
+Subject: [PATCH] winex11.drv: Report the focused window's input context to
+ DroidDeck.
+
+A program that associates an input context with its focused window wants text, as a chat box or search field does, and one that removes it is done typing. winewayland already turns this into text-input enable and disable. winex11 had no EnableIMEContext, so programs on X11 never told DroidDeck when a text field was focused. With BL_LAUNCH_DIR set, the state of the focused window is written to agent/wine-ime.json with the program name.
+---
+ dlls/winex11.drv/init.c   |  1 +
+ dlls/winex11.drv/x11drv.h |  1 +
+ dlls/winex11.drv/xim.c    | 34 ++++++++++++++++++++++++++++++++++
+ 3 files changed, 36 insertions(+)
+
+diff --git a/dlls/winex11.drv/init.c b/dlls/winex11.drv/init.c
+index dca3e27074..91688f65d8 100644
+--- a/dlls/winex11.drv/init.c
++++ b/dlls/winex11.drv/init.c
+@@ -1232,6 +1232,7 @@ static const struct user_driver_funcs x11drv_funcs =
+     .pMapVirtualKeyEx = X11DRV_MapVirtualKeyEx,
+     .pToUnicodeEx = X11DRV_ToUnicodeEx,
+     .pVkKeyScanEx = X11DRV_VkKeyScanEx,
++    .pEnableIMEContext = X11DRV_EnableIMEContext,
+     .pNotifyIMEStatus = X11DRV_NotifyIMEStatus,
+     .pSetIMECompositionRect = X11DRV_SetIMECompositionRect,
+     .pDestroyCursorIcon = X11DRV_DestroyCursorIcon,
+diff --git a/dlls/winex11.drv/x11drv.h b/dlls/winex11.drv/x11drv.h
+index 5fc004bf73..51044393b5 100644
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -211,6 +211,7 @@ extern UINT X11DRV_MapVirtualKeyEx( UINT code, UINT map_type, HKL hkl );
+ extern INT X11DRV_ToUnicodeEx( UINT virtKey, UINT scanCode, const BYTE *lpKeyState,
+                                LPWSTR bufW, int bufW_size, UINT flags, HKL hkl );
+ extern SHORT X11DRV_VkKeyScanEx( WCHAR wChar, HKL hkl );
++extern void X11DRV_EnableIMEContext( HWND hwnd, BOOL enabled );
+ extern void X11DRV_NotifyIMEStatus( HWND hwnd, UINT status );
+ extern BOOL X11DRV_SetIMECompositionRect( HWND hwnd, RECT rect );
+ extern void X11DRV_DestroyCursorIcon( HCURSOR handle );
+diff --git a/dlls/winex11.drv/xim.c b/dlls/winex11.drv/xim.c
+index 0cda054f5c..a4ac72ebdf 100644
+--- a/dlls/winex11.drv/xim.c
++++ b/dlls/winex11.drv/xim.c
+@@ -26,6 +26,9 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
++#include <fcntl.h>
++#include <string.h>
++#include <unistd.h>
+ 
+ #include "ntstatus.h"
+ #define WIN32_NO_STATUS
+@@ -333,6 +336,37 @@ void X11DRV_NotifyIMEStatus( HWND hwnd, UINT status )
+     XFlush( x11drv_thread_data()->display );
+ }
+ 
++static void report_text_field( BOOL focused )
++{
++    static LONG seq;
++    const char *launch = getenv( "BL_LAUNCH_DIR" );
++    char path[4096], temp[4096], text[512];
++    int fd, len, written;
++
++    if (!launch || !*launch) return;
++    len = snprintf( path, sizeof(path), "%s/agent/wine-ime.json", launch );
++    if (len < 0 || len >= (int)sizeof(path)) return;
++    len = snprintf( temp, sizeof(temp), "%s.%d.tmp", path, (int)getpid() );
++    if (len < 0 || len >= (int)sizeof(temp)) return;
++    len = snprintf( text, sizeof(text), "{\"textField\": %s, \"seq\": %d, \"program\": \"%s\", \"pid\": %d}\n",
++                    focused ? "true" : "false", (int)InterlockedIncrement( &seq ),
++                    process_name && !strpbrk( process_name, "\"\\" ) ? process_name : "", (int)getpid() );
++    if (len <= 0 || len >= (int)sizeof(text)) return;
++    if ((fd = open( temp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600 )) < 0) return;
++    written = write( fd, text, len );
++    if (close( fd ) || written != len || rename( temp, path )) unlink( temp );
++}
++
++void X11DRV_EnableIMEContext( HWND hwnd, BOOL enabled )
++{
++    GUITHREADINFO info = {.cbSize = sizeof(info)};
++
++    TRACE( "hwnd %p, enabled %u\n", hwnd, enabled );
++
++    if (!NtUserGetGUIThreadInfo( 0, &info ) || info.hwndFocus != hwnd) return;
++    report_text_field( enabled );
++}
++
+ /***********************************************************************
+  *           xim_init
+  */
+-- 
+2.43.0
+

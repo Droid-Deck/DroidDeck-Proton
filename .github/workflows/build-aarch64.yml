@@ -271,6 +271,8 @@ jobs:
           has tools/winebuild/spec32.c "fixup_arm64x_import_thunks( data, st.st_size )"
           has tools/winebuild/spec32.c "pe_cover_rva( &pe, func, sizeof(hotpatch) + 6"
           has dlls/ntdll/signal_arm64ec.c "ldr x17, .Lhotpatch_seq"
+          has dlls/winex11.drv/init.c ".pEnableIMEContext = X11DRV_EnableIMEContext"
+          has dlls/winex11.drv/xim.c "agent/wine-ime.json"
           exit $fail
 
   verify:
