@@ -9,8 +9,8 @@ CACHYOS_WINE_BRANCH=cachyos_11.0_20261014/main
 CACHYOS_WINE_COMMIT=cd14106e4fc0f96006005b07985e49cc1517e9c0
 # Plus two commits from the unreleased cachyos_11.0_20261014/dev (c3808057d6), in tier 3:
 # b3795230 (winebus.sys HID serial), 447acb9a (hidclass.sys multi-TLC ids).
-WINE_REPO=https://github.com/maxjivi05/proton-wine
-WINE_BRANCH=droiddeck/arm64x-import-thunk-hotpatch
+WINE_REPO=https://github.com/The412Banner/proton-wine
+WINE_BRANCH=banner-proton/11.12
 WINE_TIER_TAGS="bp-11.12-tier1 bp-11.12-tier2 bp-11.12-tier3 bp-11.12-tier4 bp-11.12-tier5 bp-11.12-tier6 bp-11.12-tier7"
 # Wine patches GE added after tier 2 was made, committed on top of the branch (tags, in order).
 # verify-tier2.sh expects a fresh run of GE's wine section to equal tier 2 plus these.
