@@ -4,7 +4,11 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 
 ## 2026-11-06
 
-### ARM64X import thunks get the x86_64 hotpatch prologue (branch `fix/arm64x-import-thunk-hotpatch`, test build, NOT merged)
+### 11-12.2 released on the org (Latest, user's go)
+- `banner-proton/VERSION` 11-12.2, README note; the fix branch fast-forwarded onto `main` (61b60d0f), run 42222584477 green including Verify tarball and Release, compared with 11-12.1.
+- **Auto update (Retroid Pocket Duo):** the app's hourly release check saw 11-12.2 on open and installed it in place of 11-12.1 without any input. Subnautica boots on it (54 FPS at the warning screen).
+
+### ARM64X import thunks get the x86_64 hotpatch prologue (branch `fix/arm64x-import-thunk-hotpatch`, released in 11-12.2)
 - **Why:** in 11-12.1 an x64 process sees 2993 exports across 34 DLLs (kernel32 800, user32 209, advapi32 200, shlwapi 218, imagehlp 72, evr 9, gdi32 58, ...) that start with a bare `jmp [iat]`, the shape of an inline hook. On x86_64 winebuild emits these `-import` exports as `lea rsp,[rsp+0]; jmp [iat]` (Wine bug 48938); on ARM64EC the linker builds the x64 thunk itself without it. Anti-tamper that checks export prologues refuses to start (Forza Horizon 6; research by TimmyTurner51, fh6-wine-fex).
 - **Fix:** `patches/wine-hotfixes/pending/winebuild-arm64x-import-thunk-hotpatch.patch`, applied by `banner-proton/apply-deferred-game-patches.sh`: `winebuild --builtin` reads the x64 view through the ARM64X dynamic relocations (export directory, IAT, and the delay-import descriptors that the x64 view relocates with delta fixups) and rewrites only 16-byte-aligned AMD64 slots that hold exactly `jmp [import slot]` plus uniform padding. The jump target is kept.
 - **Section edge:** the last thunk in `.text` of kernel32 (`lstrlenW`), kernelbase (`ResolveDelayLoadedAPI`) and dbghelp (`ImageRvaToSection`) ends exactly at the section's VirtualSize, so `llvm-strip` in `strip-dist.py` dropped the moved jump and left half a prologue. The patch grows VirtualSize to the end of the rewritten thunk when the raw data and section alignment already cover it. Reproduced with `llvm-strip --strip-unneeded` on the host before the fix, clean after.
