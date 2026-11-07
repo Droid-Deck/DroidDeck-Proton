@@ -9,6 +9,7 @@ apply() {
 }
 apply "$root/patches/game-patches/wow-forever-arm64ec-ntdll.patch"
 apply "$root/patches/wine-hotfixes/pending/server-android-shared-storage-owner.patch"
+apply "$root/patches/wine-hotfixes/pending/server-directory-users-ace.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-i386-recover-lost-wake-on-address.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-wine-files-not-readonly.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-android-storage-case-insensitive.patch"
