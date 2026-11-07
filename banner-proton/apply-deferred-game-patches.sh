@@ -16,6 +16,7 @@ apply "$root/patches/game-patches/dirt-telemetry-sendto-closed-socket.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-wow64-exe-preferred-base.patch"
 apply "$root/patches/wine-hotfixes/pending/winebuild-arm64x-import-thunk-hotpatch.patch"
 apply "$root/patches/wine-hotfixes/pending/winex11-report-ime-context-focus.patch"
+apply "$root/patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch"
 if [ -f "$root/FEX/CMakeLists.txt" ]; then
   cd "$root/FEX"
   for p in "$root"/patches/fex/*.patch; do
