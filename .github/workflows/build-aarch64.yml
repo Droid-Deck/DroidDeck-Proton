@@ -275,6 +275,8 @@ jobs:
           has dlls/winex11.drv/xim.c "agent/wine-ime.json"
           has dlls/winedmo/unix_transform.c "static NTSTATUS send_drain_packets( struct unix_transform *t )"
           has dlls/winedmo/unix_transform.c "t->drain_packet_pending && !send_drain_packets( t )"
+          has dlls/winedmo/unix_transform.c "reset_parser( t );" 2
+          has dlls/winedmo/unix_transform.c "t->draining = false;" 2
           exit $fail
 
   verify:
