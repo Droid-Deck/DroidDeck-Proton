@@ -273,6 +273,7 @@ jobs:
           has dlls/ntdll/signal_arm64ec.c "ldr x17, .Lhotpatch_seq"
           has dlls/winex11.drv/init.c ".pEnableIMEContext = X11DRV_EnableIMEContext"
           has dlls/winex11.drv/xim.c "agent/wine-ime.json"
+          has dlls/winedmo/unix_transform.c "static void send_drain_packets( struct unix_transform *t, bool decoder_idle )"
           exit $fail
 
   verify:
