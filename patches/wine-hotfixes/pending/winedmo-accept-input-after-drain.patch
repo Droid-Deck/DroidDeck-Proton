@@ -1,0 +1,71 @@
+From 34577abd34734379792fa550701f8897460a76db Mon Sep 17 00:00:00 2001
+From: K11MCH1 <81425424+K11MCH1@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 18:38:30 +0900
+Subject: [PATCH] winedmo: Accept input again once a drain has completed.
+
+transform_drain() sets draining, and transform_push_input() refuses all
+input while it is set. Only transform_flush() cleared it. A Windows
+decoder MFT takes new input once the drain is done and ProcessOutput()
+has returned MF_E_TRANSFORM_NEED_MORE_INPUT, so a client that drains
+and keeps feeding the same decoder looped on MF_E_NOTACCEPTING forever.
+test_h264_decoder_concat_streams hangs on it.
+
+When avcodec_receive_frame() returns EOF, flush the decoder, which
+libavcodec needs before it takes another packet, reset the parser, whose
+frame boundary state outlives the drain, and clear draining.
+---
+ dlls/winedmo/unix_transform.c | 24 ++++++++++++++++++------
+ 1 file changed, 18 insertions(+), 6 deletions(-)
+
+diff --git a/dlls/winedmo/unix_transform.c b/dlls/winedmo/unix_transform.c
+index fd30706f61..de5fc6e4af 100644
+--- a/dlls/winedmo/unix_transform.c
++++ b/dlls/winedmo/unix_transform.c
+@@ -1367,6 +1367,13 @@ static NTSTATUS send_drain_packets( struct unix_transform *t )
+     return STATUS_SUCCESS;
+ }
+ 
++static void reset_parser( struct unix_transform *t )
++{
++    if (!t->parser) return;
++    av_parser_close( t->parser );
++    t->parser = av_parser_init( t->parser_codec_id );
++}
++
+ NTSTATUS transform_get_output( void *arg )
+ {
+     struct transform_get_output_params *params = arg;
+@@ -1461,7 +1468,16 @@ NTSTATUS transform_get_output( void *arg )
+                        (INT64)t->frame->pkt_dts, (INT64)t->frame->pts, (INT64)t->frame->duration );
+             if (ret == AVERROR(EAGAIN) && t->drain_packet_pending && !send_drain_packets( t )) continue;
+             if (ret == AVERROR(EAGAIN)) { params->size = 0; return STATUS_MORE_PROCESSING_REQUIRED; }
+-            if (ret == AVERROR_EOF)     { params->size = 0; return STATUS_END_OF_FILE; }
++            if (ret == AVERROR_EOF)
++            {
++                /* libavcodec takes no packet after EOF until avcodec_flush_buffers(), and a flushed
++                 * parser still believes a frame has started. */
++                avcodec_flush_buffers( t->avctx );
++                reset_parser( t );
++                t->draining = false;
++                params->size = 0;
++                return STATUS_END_OF_FILE;
++            }
+             if (ret < 0)
+             {
+                 WARN( "avcodec_receive_frame: %d\n", ret );
+@@ -1751,11 +1767,7 @@ NTSTATUS transform_flush( void *arg )
+     TRACE( "transform %p\n", t );
+ 
+     if (t->avctx) avcodec_flush_buffers( t->avctx );
+-    if (t->parser)
+-    {
+-        av_parser_close( t->parser );
+-        t->parser = av_parser_init( t->parser_codec_id );
+-    }
++    reset_parser( t );
+     if (t->frame) av_frame_unref( t->frame );
+     if (t->packet) av_packet_unref( t->packet );
+     if (t->parsed_packet) av_packet_unref( t->parsed_packet );
+-- 
+2.43.0
+

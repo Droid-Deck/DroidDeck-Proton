@@ -1,0 +1,158 @@
+From 112911a5cac956b05a8ce5abeb14830214454c67 Mon Sep 17 00:00:00 2001
+From: K11MCH1 <81425424+K11MCH1@users.noreply.github.com>
+Date: Sat, 7 Nov 2026 16:20:00 +0900
+Subject: [PATCH] winedmo: Send the access unit the parser still holds when
+ draining.
+
+H.264 input without codec data goes through FFmpeg's parser
+(ge-video-rework 0025), which hands over an access unit only once the
+next one starts. transform_drain() sent the end of stream without
+flushing the parser, so every drain lost the last frame of the stream.
+Burnout Paradise Remastered feeds its 300-frame intro video this way,
+gets 299 frames back after MFT_MESSAGE_COMMAND_DRAIN and waits for the
+last one forever.
+
+Flush the parser before the end of stream and send what it returns. A
+drained packet the decoder refuses with EAGAIN, from the parser or from
+the MPEG elementary stream assembler, is kept and sent once
+avcodec_receive_frame() runs dry instead of being dropped. A drained
+packet the decoder rejects is dropped with a warning and the drain
+completes, as transform_push_input() does since 0101.
+---
+ dlls/winedmo/unix_transform.c | 81 ++++++++++++++++++++++++++++-------
+ 1 file changed, 66 insertions(+), 15 deletions(-)
+
+diff --git a/dlls/winedmo/unix_transform.c b/dlls/winedmo/unix_transform.c
+index 03e51cc26c..fd30706f61 100644
+--- a/dlls/winedmo/unix_transform.c
++++ b/dlls/winedmo/unix_transform.c
+@@ -64,6 +64,7 @@ struct unix_transform
+     bool is_raw_video;
+     bool draining;       /* NULL packet sent — flushing decoder */
+     bool frame_pending;  /* frame holds undispatched output */
++    bool drain_packet_pending; /* parsed_packet holds drained input the decoder has not taken */
+ 
+     /* Audio output conversion */
+     SwrContext         *swr;
+@@ -1153,6 +1154,7 @@ NTSTATUS transform_push_input( void *arg )
+             avcodec_flush_buffers( t->avctx );
+             if (t->frame) av_frame_unref( t->frame );
+             if (t->parsed_packet) av_packet_unref( t->parsed_packet );
++            t->drain_packet_pending = false;
+             t->frame_pending = false;
+             t->draining = false;
+             t->video_buf_filled = 0;
+@@ -1306,6 +1308,65 @@ NTSTATUS transform_push_input( void *arg )
+     return STATUS_SUCCESS;
+ }
+ 
++static NTSTATUS take_drain_packet( struct unix_transform *t )
++{
++    uint8_t *data = NULL;
++    int size = 0;
++
++    if (t->mpeg_es_assemble)
++    {
++        data = t->mpeg_es_buf;
++        size = t->mpeg_es_size;
++    }
++    else if (t->parser)
++    {
++        av_parser_parse2( t->parser, t->avctx, &data, &size, NULL, 0,
++                          AV_NOPTS_VALUE, AV_NOPTS_VALUE, AV_NOPTS_VALUE );
++    }
++    if (!size) return STATUS_SUCCESS;
++
++    av_packet_unref( t->parsed_packet );
++    if (av_new_packet( t->parsed_packet, size ) < 0)
++        return STATUS_NO_MEMORY;
++    memcpy( t->parsed_packet->data, data, size );
++    if (t->parser)
++    {
++        t->parsed_packet->pts = t->parser->pts != AV_NOPTS_VALUE ? t->parser->pts : t->packet->pts;
++        t->parsed_packet->dts = t->parser->dts != AV_NOPTS_VALUE ? t->parser->dts : t->packet->dts;
++        t->parsed_packet->duration = t->packet->duration;
++        t->parsed_packet->flags = t->packet->flags;
++    }
++    t->mpeg_es_size = 0;
++    t->drain_packet_pending = true;
++    return STATUS_SUCCESS;
++}
++
++/* Sends the input the parser or the MPEG assembler still holds, then the end of stream. A packet the
++ * decoder refuses with EAGAIN stays pending until avcodec_receive_frame() has run dry. */
++static NTSTATUS send_drain_packets( struct unix_transform *t )
++{
++    NTSTATUS status;
++    int ret;
++
++    for (;;)
++    {
++        if (!t->drain_packet_pending)
++        {
++            if ((status = take_drain_packet( t ))) return status;
++            if (!t->drain_packet_pending) break;
++        }
++        if ((ret = avcodec_send_packet( t->avctx, t->parsed_packet )) == AVERROR(EAGAIN))
++            return STATUS_PENDING;
++        if (ret < 0)
++            WARN( "avcodec_send_packet: %d, dropping %d bytes\n", ret, t->parsed_packet->size );
++        av_packet_unref( t->parsed_packet );
++        t->drain_packet_pending = false;
++    }
++
++    avcodec_send_packet( t->avctx, NULL );
++    return STATUS_SUCCESS;
++}
++
+ NTSTATUS transform_get_output( void *arg )
+ {
+     struct transform_get_output_params *params = arg;
+@@ -1398,6 +1459,7 @@ NTSTATUS transform_get_output( void *arg )
+                 TRACE( "receive %s frame ret %d pkt_dts %"PRId64" pts %"PRId64" duration %"PRId64"\n",
+                        avcodec_get_name( t->avctx->codec_id ), ret,
+                        (INT64)t->frame->pkt_dts, (INT64)t->frame->pts, (INT64)t->frame->duration );
++            if (ret == AVERROR(EAGAIN) && t->drain_packet_pending && !send_drain_packets( t )) continue;
+             if (ret == AVERROR(EAGAIN)) { params->size = 0; return STATUS_MORE_PROCESSING_REQUIRED; }
+             if (ret == AVERROR_EOF)     { params->size = 0; return STATUS_END_OF_FILE; }
+             if (ret < 0)
+@@ -1662,7 +1724,7 @@ NTSTATUS transform_drain( void *arg )
+ {
+     const struct transform_drain_params *params = arg;
+     struct unix_transform *t = (void *)(UINT_PTR)params->transform.handle;
+-    int ret;
++    NTSTATUS status;
+ 
+     TRACE( "transform %p\n", t );
+ 
+@@ -1674,20 +1736,8 @@ NTSTATUS transform_drain( void *arg )
+ 
+     if (!t->draining)
+     {
+-        if (t->mpeg_es_assemble && t->mpeg_es_size)
+-        {
+-            av_packet_unref( t->parsed_packet );
+-            if ((ret = av_new_packet( t->parsed_packet, t->mpeg_es_size )) < 0)
+-                return STATUS_NO_MEMORY;
+-            memcpy( t->parsed_packet->data, t->mpeg_es_buf, t->mpeg_es_size );
+-            if ((ret = avcodec_send_packet( t->avctx, t->parsed_packet )) < 0 && ret != AVERROR(EAGAIN))
+-            {
+-                WARN( "avcodec_send_packet: %d\n", ret );
+-                return STATUS_UNSUCCESSFUL;
+-            }
+-            t->mpeg_es_size = 0;
+-        }
+-        avcodec_send_packet( t->avctx, NULL );
++        if ((status = send_drain_packets( t )) && status != STATUS_PENDING)
++            return status;
+         t->draining = true;
+     }
+     return STATUS_SUCCESS;
+@@ -1709,6 +1759,7 @@ NTSTATUS transform_flush( void *arg )
+     if (t->frame) av_frame_unref( t->frame );
+     if (t->packet) av_packet_unref( t->packet );
+     if (t->parsed_packet) av_packet_unref( t->parsed_packet );
++    t->drain_packet_pending = false;
+     t->frame_pending      = false;
+     t->draining           = false;
+     t->audio_buf_filled   = 0;
