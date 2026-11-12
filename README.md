@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-12.3)</b></summary>
+<summary><b>Pins (11-12.4)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -60,6 +60,13 @@ Wine and FEX patches apply at build time as before. The 32-bit lost wake fix (11
 stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. New in 11-12.1 besides GE-Proton11-12:
 two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
 code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
+
+11-12.4 is 11-12.3 plus two Wine fixes. `patches/wine-hotfixes/pending/ntdll-arm64ec-process-breakpoint-rip.patch`:
+ntdll's ARM64EC process breakpoint handler steps over its `brk` at the AMD64-layout context's `Rip`, so games that debug
+a copy of themselves (Metal Gear Solid V: Ground Zeroes) no longer raise the same breakpoint forever at startup (PR #16).
+`patches/wine-hotfixes/pending/server-directory-users-ace.patch`: directories the owner can read get a read and execute
+ACE for Users, so Steam's DRM helper (`steamservice.exe /runfunc`) finds one and old Steam DRM games stop failing with
+error 55 (PR #12).
 
 11-12.3 is 11-12.2 plus winex11 text-field reporting (`patches/wine-hotfixes/pending/winex11-report-ime-context-focus.patch`):
 winex11 implements `EnableIMEContext`, so when the focused window gains or loses an input context (a game's chat or search
