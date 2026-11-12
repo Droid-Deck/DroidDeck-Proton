@@ -273,6 +273,8 @@ jobs:
           has dlls/ntdll/signal_arm64ec.c "ldr x17, .Lhotpatch_seq"
           has dlls/winex11.drv/init.c ".pEnableIMEContext = X11DRV_EnableIMEContext"
           has dlls/winex11.drv/xim.c "agent/wine-ime.json"
+          has dlls/ntdll/unix/sync.c "req->inproc_sync = inproc;"
+          has server/event.c "send_inproc_sync_fd( &event->obj, reply->handle, &reply->inproc_shm_idx )"
           exit $fail
 
   verify:
