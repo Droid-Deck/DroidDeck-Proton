@@ -18,6 +18,8 @@ apply "$root/patches/wine-hotfixes/pending/ntdll-wow64-exe-preferred-base.patch"
 apply "$root/patches/wine-hotfixes/pending/winebuild-arm64x-import-thunk-hotpatch.patch"
 apply "$root/patches/wine-hotfixes/pending/winex11-report-ime-context-focus.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-arm64ec-process-breakpoint-rip.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-server-return-event-sync-fd-on-create.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-close-sync-handle-outside-fd-cache-mutex.patch"
 if [ -f "$root/FEX/CMakeLists.txt" ]; then
   cd "$root/FEX"
   for p in "$root"/patches/fex/*.patch; do
