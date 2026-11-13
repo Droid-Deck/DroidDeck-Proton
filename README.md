@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-12.6)</b></summary>
+<summary><b>Pins (11-12.7)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -60,6 +60,11 @@ Wine and FEX patches apply at build time as before. The 32-bit lost wake fix (11
 stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. New in 11-12.1 besides GE-Proton11-12:
 two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
 code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
+
+11-12.7 is 11-12.6 plus one fix for slow starts from removable storage.
+`patches/wine-hotfixes/pending/ntdll-skip-listing-case-folding-dir-for-missing-file.patch`: when a file is missing from
+a folder whose filesystem already matches names without regard to case, ntdll reports it missing straight away instead
+of reading the whole folder to look for a differently cased name (PR #26).
 
 11-12.6 is 11-12.5 plus two fixes for slow starts, most visible when the program is installed on removable storage.
 `patches/wine-hotfixes/pending/ntdll-skip-xattr-queries-on-unsupported-filesystems.patch`: once a filesystem reports
