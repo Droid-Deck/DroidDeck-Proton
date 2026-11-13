@@ -277,6 +277,7 @@ jobs:
           has server/event.c "send_inproc_sync_fd( &event->obj, reply->handle, &reply->inproc_shm_idx )"
           has dlls/ntdll/unix/server.c "if ((sync = begin_close_inproc_sync( handle ))) mutex_unlock( &fd_cache_mutex );"
           has dlls/ntdll/unix/server.c "if ((parked = park_inproc_event( handle )) > 0) return STATUS_SUCCESS;"
+          has dlls/ntdll/unix/file.c "if (xattr_less( st )) return ret;"
           exit $fail
 
   verify:

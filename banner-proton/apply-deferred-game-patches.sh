@@ -21,6 +21,7 @@ apply "$root/patches/wine-hotfixes/pending/ntdll-arm64ec-process-breakpoint-rip.
 apply "$root/patches/wine-hotfixes/pending/ntdll-server-return-event-sync-fd-on-create.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-close-sync-handle-outside-fd-cache-mutex.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-server-reuse-closed-private-events.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-skip-xattr-queries-on-unsupported-filesystems.patch"
 if [ -f "$root/FEX/CMakeLists.txt" ]; then
   cd "$root/FEX"
   for p in "$root"/patches/fex/*.patch; do
