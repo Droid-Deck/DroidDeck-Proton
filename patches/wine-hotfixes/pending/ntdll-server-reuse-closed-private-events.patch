@@ -1,4 +1,4 @@
-From 5c2e19b02816d5abc960eee5a2dba9baf75237db Mon Sep 17 00:00:00 2001
+From 147f9872b9e6ebf713b08af0e0f078f6aec39e36 Mon Sep 17 00:00:00 2001
 From: maxjivi05 <maxjividen@gmail.com>
 Date: Thu, 12 Nov 2026 21:27:23 -0500
 Subject: [PATCH] ntdll, server: Reuse closed private events without a server
@@ -10,8 +10,8 @@ next matching NtCreateEvent. The server publishes a mark for such an event
 in a shared read-only mapping and withdraws it as soon as the handle is
 looked up, duplicated, made inheritable or closed on the server side.
 ---
- dlls/ntdll/unix/server.c       |  53 ++++++++-----
- dlls/ntdll/unix/sync.c         | 140 +++++++++++++++++++++++++++++++--
+ dlls/ntdll/unix/server.c       |  53 +++++++-----
+ dlls/ntdll/unix/sync.c         | 142 +++++++++++++++++++++++++++++++--
  dlls/ntdll/unix/unix_private.h |   2 +
  include/wine/server_protocol.h |  11 ++-
  server/event.c                 |   4 +
@@ -22,7 +22,7 @@ looked up, duplicated, made inheritable or closed on the server side.
  server/request_handlers.h      |   7 +-
  server/request_trace.h         |   3 +
  server/thread.c                |   3 +
- 12 files changed, 273 insertions(+), 30 deletions(-)
+ 12 files changed, 275 insertions(+), 30 deletions(-)
 
 diff --git a/dlls/ntdll/unix/server.c b/dlls/ntdll/unix/server.c
 index e596835..4b9d5b1 100644
@@ -104,7 +104,7 @@ index e596835..4b9d5b1 100644
      if (ret != STATUS_INVALID_HANDLE || !handle) return ret;
      if (!peb->BeingDebugged) return ret;
 diff --git a/dlls/ntdll/unix/sync.c b/dlls/ntdll/unix/sync.c
-index 03ec551..70306e8 100644
+index 03ec551..c3ec341 100644
 --- a/dlls/ntdll/unix/sync.c
 +++ b/dlls/ntdll/unix/sync.c
 @@ -545,6 +545,8 @@ struct inproc_sync
@@ -125,7 +125,16 @@ index 03ec551..70306e8 100644
  
  static struct inproc_sync *inproc_sync_cache[INPROC_SYNC_CACHE_ENTRIES];
  static struct inproc_sync inproc_sync_cache_initial_block[INPROC_SYNC_CACHE_BLOCK_SIZE];
-@@ -678,7 +680,7 @@ static struct inproc_sync *get_cached_inproc_sync( HANDLE handle )
+@@ -613,6 +615,8 @@ static struct inproc_sync *cache_inproc_sync( HANDLE handle, struct inproc_sync
+     cache->closed = sync->closed;
+     while (!(cache->serial = InterlockedIncrement( &next_inproc_sync_serial ))) ;
+     cache->shm_idx = sync->shm_idx;
++    cache->mark = sync->mark;
++    cache->tag = sync->tag;
+     /* Make sure we set the other members before the refcount; this store needs
+      * release semantics [paired with the load in get_cached_inproc_sync()].
+      * Set the refcount to 2 (one for the handle, one for the caller). */
+@@ -678,7 +682,7 @@ static struct inproc_sync *get_cached_inproc_sync( HANDLE handle )
       * cache_inproc_sync()] */
      if (!interlocked_inc_if_nonzero( &cache->refcount )) return NULL;
  
@@ -134,7 +143,7 @@ index 03ec551..70306e8 100644
      {
          /* The object is still being used, but "handle" has been closed. The
           * handle value might have been reused for another object in the
-@@ -692,7 +694,7 @@ static struct inproc_sync *get_cached_inproc_sync( HANDLE handle )
+@@ -692,7 +696,7 @@ static struct inproc_sync *get_cached_inproc_sync( HANDLE handle )
  }
  
  static void receive_inproc_sync( HANDLE handle, int type, unsigned int access, unsigned int shm_idx,
@@ -143,7 +152,7 @@ index 03ec551..70306e8 100644
  {
      obj_handle_t fd_handle;
  
-@@ -704,6 +706,8 @@ static void receive_inproc_sync( HANDLE handle, int type, unsigned int access, u
+@@ -704,6 +708,8 @@ static void receive_inproc_sync( HANDLE handle, int type, unsigned int access, u
      sync->closed = 0;
      sync->serial = 0;
      sync->shm_idx = do_esync() ? shm_idx : 0;
@@ -152,7 +161,7 @@ index 03ec551..70306e8 100644
  }
  
  /* fd_cache_mutex must be held to avoid races with other thread receiving fds */
-@@ -715,7 +719,7 @@ static NTSTATUS get_server_inproc_sync( HANDLE handle, struct inproc_sync *sync
+@@ -715,7 +721,7 @@ static NTSTATUS get_server_inproc_sync( HANDLE handle, struct inproc_sync *sync
      {
          req->handle = wine_server_obj_handle( handle );
          if (!(ret = wine_server_call( req )))
@@ -161,7 +170,7 @@ index 03ec551..70306e8 100644
      }
      SERVER_END_REQ;
  
-@@ -740,6 +744,17 @@ static BOOL is_closing_inproc_sync( HANDLE handle )
+@@ -740,6 +746,17 @@ static BOOL is_closing_inproc_sync( HANDLE handle )
      return InterlockedCompareExchange( &cache->refcount, 0, 0 ) && cache->closed == 2;
  }
  
@@ -179,7 +188,7 @@ index 03ec551..70306e8 100644
  /* returns a pointer to a cache entry; if the object could not be cached,
   * returns "cache" instead, which should be allocated on stack */
  static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_type, ACCESS_MASK desired_access,
-@@ -766,6 +781,11 @@ static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_ty
+@@ -766,6 +783,11 @@ static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_ty
          server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
          if (!(sync = get_cached_inproc_sync( handle )))
          {
@@ -191,7 +200,7 @@ index 03ec551..70306e8 100644
              closing = is_closing_inproc_sync( handle );
              if ((ret = get_server_inproc_sync( handle, stack )))
              {
-@@ -827,6 +847,109 @@ static NTSTATUS keep_inproc_sync( HANDLE handle, unsigned int serial )
+@@ -827,6 +849,109 @@ static NTSTATUS keep_inproc_sync( HANDLE handle, unsigned int serial )
      return ret;
  }
  
@@ -301,7 +310,7 @@ index 03ec551..70306e8 100644
  void *begin_close_inproc_sync( HANDLE handle )
  {
      struct inproc_sync *cache;
-@@ -1263,6 +1386,12 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
+@@ -1263,6 +1388,12 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
  
      *handle = 0;
      if (type != NotificationEvent && type != SynchronizationEvent) return STATUS_INVALID_PARAMETER;
@@ -314,7 +323,7 @@ index 03ec551..70306e8 100644
      if ((ret = alloc_object_attributes( attr, &objattr, &len ))) return ret;
  
      if (inproc) server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
-@@ -1277,7 +1406,8 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
+@@ -1277,7 +1408,8 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
          *handle = wine_server_ptr_handle( reply->handle );
          if (reply->inproc_type)
          {
