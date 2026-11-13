@@ -561,7 +561,7 @@ index 15075a6..2d27a61 100644
      timeout_t    server_start; /* server start time */
      unsigned int session_id;   /* process session id */
      obj_handle_t inproc_device;/* inproc device fd in flight with this handle */
-+    int          event_marks;  /* event marks fd in flight */
++    int          event_marks;
      data_size_t  info_size;    /* total size of startup info */
      VARARG(machines,ushorts);  /* array of supported machines */
  @END
