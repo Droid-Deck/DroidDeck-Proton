@@ -1,0 +1,48 @@
+From d55287c26bdba7c49531de6fa6a1592354784262 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Thu, 12 Nov 2026 23:41:10 -0500
+Subject: [PATCH] ntdll: Look up a missing file from its parent directory when
+ that exists as spelled.
+
+When the full path is not found, every component was looked up again from
+the top. If the parent directory exists exactly as spelled, each of those
+lookups succeeds with the same spelling, so only the last component still
+needs the case-insensitive search.
+---
+ dlls/ntdll/unix/file.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/dlls/ntdll/unix/file.c b/dlls/ntdll/unix/file.c
+index 96a9eaf..b521dbf 100644
+--- a/dlls/ntdll/unix/file.c
++++ b/dlls/ntdll/unix/file.c
+@@ -3809,6 +3809,26 @@ static NTSTATUS lookup_unix_name( int root_fd, OBJECT_ATTRIBUTES *attr, UNICODE_
+     }
+     if (skip_search && strcasestr(unix_name, skip_search) && disposition == FILE_OPEN)
+         return STATUS_OBJECT_NAME_NOT_FOUND;
++
++    if (!is_unix && ret >= 0 && ret < unix_len - pos - 1)
++    {
++        char *parent = strrchr( unix_name + pos + 1, '/' );
++
++        if (parent && parent[1])
++        {
++            *parent = 0;
++            if (!fstatat( root_fd, unix_name, &st, 0 ))
++            {
++                const WCHAR *last = name + name_len;
++
++                while (last[-1] != '\\') last--;
++                pos = parent - unix_name;
++                nt_pos += last - name;
++                name_len -= last - name;
++                name = last;
++            }
++        }
++    }
+     /* now do it component by component */
+ 
+     while (name_len)
+-- 
+2.43.0
+

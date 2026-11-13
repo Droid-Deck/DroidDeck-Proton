@@ -1,0 +1,75 @@
+From 7d750748d6e9a8159b906d641096ae67e26aca6f Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Thu, 12 Nov 2026 23:40:54 -0500
+Subject: [PATCH] ntdll: Use the listed directory as the parent of its
+ subdirectories.
+
+Each subdirectory in a listing was checked for being a mount point with
+a stat of its ".." entry. That entry is the directory being listed,
+whose identity is already known, so the comparison no longer needs a
+call per subdirectory.
+---
+ dlls/ntdll/unix/file.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/dlls/ntdll/unix/file.c b/dlls/ntdll/unix/file.c
+index b7bf9ac..96a9eaf 100644
+--- a/dlls/ntdll/unix/file.c
++++ b/dlls/ntdll/unix/file.c
+@@ -1826,7 +1826,8 @@ static NTSTATUS fd_set_file_info( int fd, HANDLE handle, UINT attr, BOOL force_s
+ 
+ 
+ /* get the stat info and file attributes for a file (by name) */
+-static int get_file_info( const char *path, struct stat *st, ULONG *attr, ULONG *reparse_tag )
++static int get_file_info( const char *path, const struct file_identity *parent, struct stat *st,
++                          ULONG *attr, ULONG *reparse_tag )
+ {
+     char buffer[MAXIMUM_REPARSE_DATA_BUFFER_SIZE];
+     size_t len = strlen( path );
+@@ -1849,6 +1850,14 @@ static int get_file_info( const char *path, struct stat *st, ULONG *attr, ULONG
+             if (reparse_tag) *reparse_tag = IO_REPARSE_TAG_LX_SYMLINK;
+         }
+     }
++    else if (S_ISDIR( st->st_mode ) && parent)
++    {
++        if (st->st_dev != parent->dev || st->st_ino == parent->ino)
++        {
++            *attr |= FILE_ATTRIBUTE_REPARSE_POINT;
++            if (reparse_tag) *reparse_tag = IO_REPARSE_TAG_MOUNT_POINT;
++        }
++    }
+     else if (S_ISDIR( st->st_mode ) && (parent_path = malloc( len + 4 )))
+     {
+         struct stat parent_st;
+@@ -2494,8 +2503,9 @@ static NTSTATUS get_dir_data_entry( struct dir_data *dir_data, void *info_ptr, I
+     union file_directory_info *info;
+     struct stat st;
+     ULONG name_len, start, dir_size, attributes, reparse_tag;
++    BOOL dots = !strcmp( names->unix_name, "." ) || !strcmp( names->unix_name, ".." );
+ 
+-    if (get_file_info( names->unix_name, &st, &attributes, &reparse_tag ) == -1)
++    if (get_file_info( names->unix_name, dots ? NULL : &dir_data->id, &st, &attributes, &reparse_tag ) == -1)
+     {
+         TRACE( "file no longer exists %s\n", debugstr_a(names->unix_name) );
+         return STATUS_SUCCESS;
+@@ -5176,7 +5186,7 @@ NTSTATUS WINAPI NtQueryFullAttributesFile( const OBJECT_ATTRIBUTES *attr,
+         ULONG attributes;
+         struct stat st;
+ 
+-        if (get_file_info( unix_name, &st, &attributes, NULL ) == -1)
++        if (get_file_info( unix_name, NULL, &st, &attributes, NULL ) == -1)
+             status = errno_to_status( errno );
+         else if (!S_ISREG(st.st_mode) && !S_ISDIR(st.st_mode))
+             status = STATUS_INVALID_INFO_CLASS;
+@@ -5205,7 +5215,7 @@ NTSTATUS WINAPI NtQueryAttributesFile( const OBJECT_ATTRIBUTES *attr, FILE_BASIC
+         ULONG attributes;
+         struct stat st;
+ 
+-        if (get_file_info( unix_name, &st, &attributes, NULL ) == -1)
++        if (get_file_info( unix_name, NULL, &st, &attributes, NULL ) == -1)
+             status = errno_to_status( errno );
+         else if (!S_ISREG(st.st_mode) && !S_ISDIR(st.st_mode))
+             status = STATUS_INVALID_INFO_CLASS;
+-- 
+2.43.0
+

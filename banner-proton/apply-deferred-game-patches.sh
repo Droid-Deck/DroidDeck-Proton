@@ -22,6 +22,8 @@ apply "$root/patches/wine-hotfixes/pending/ntdll-server-return-event-sync-fd-on-
 apply "$root/patches/wine-hotfixes/pending/ntdll-close-sync-handle-outside-fd-cache-mutex.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-server-reuse-closed-private-events.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-skip-xattr-queries-on-unsupported-filesystems.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-use-listed-directory-as-subdirectory-parent.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-look-up-missing-file-from-existing-parent.patch"
 if [ -f "$root/FEX/CMakeLists.txt" ]; then
   cd "$root/FEX"
   for p in "$root"/patches/fex/*.patch; do
