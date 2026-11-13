@@ -1,0 +1,52 @@
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index 78fd26aa311..0c894bc9ca2 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -3301,6 +3301,24 @@ static IMAGE_BASE_RELOCATION *process_relocation_block( char *page, IMAGE_BASE_R
+ }
+ 
+ 
++static BOOL map_image_section_anon( void *base, SIZE_T size )
++{
++    void *copy;
++
++    if ((copy = mmap( NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0 )) == MAP_FAILED)
++        return FALSE;
++    memcpy( copy, base, size );
++    if (mmap( base, size, PROT_READ | PROT_WRITE, MAP_FIXED | MAP_PRIVATE | MAP_ANON, -1, 0 ) == MAP_FAILED)
++    {
++        munmap( copy, size );
++        return FALSE;
++    }
++    memcpy( base, copy, size );
++    munmap( copy, size );
++    return TRUE;
++}
++
++
+ /***********************************************************************
+  *           map_image_into_view
+  *
+@@ -3524,6 +3542,7 @@ static NTSTATUS map_image_into_view( struct file_view *view, const UNICODE_STRIN
+     {
+         SIZE_T size;
+         BYTE vprot = VPROT_COMMITTED;
++        BOOL protected;
+ 
+         if (sec[i].Misc.VirtualSize)
+             size = ROUND_SIZE( sec[i].VirtualAddress, sec[i].Misc.VirtualSize, align_mask );
+@@ -3534,7 +3553,13 @@ static NTSTATUS map_image_into_view( struct file_view *view, const UNICODE_STRIN
+         if (sec[i].Characteristics & IMAGE_SCN_MEM_WRITE)   vprot |= VPROT_WRITECOPY;
+         if (sec[i].Characteristics & IMAGE_SCN_MEM_EXECUTE) vprot |= VPROT_EXEC;
+ 
+-        if (!set_vprot( view, ptr + sec[i].VirtualAddress, size, vprot ) && (vprot & VPROT_EXEC))
++        protected = set_vprot( view, ptr + sec[i].VirtualAddress, size, vprot );
++        if (!protected && (vprot & VPROT_EXEC) && (errno == EACCES || errno == EPERM))
++        {
++            if (map_image_section_anon( ptr + sec[i].VirtualAddress, size ))
++                protected = set_vprot( view, ptr + sec[i].VirtualAddress, size, vprot );
++        }
++        if (!protected && (vprot & VPROT_EXEC))
+             ERR( "failed to set %08x protection on %s section %.8s, noexec filesystem?\n",
+                  sec[i].Characteristics, debugstr_us(nt_name), sec[i].Name );
+     }
