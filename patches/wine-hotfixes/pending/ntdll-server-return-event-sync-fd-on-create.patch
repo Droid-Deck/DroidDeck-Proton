@@ -1,0 +1,252 @@
+From c75ad066163dfd7c07d9323038ca45d4b32d3765 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Thu, 12 Nov 2026 14:06:46 -0500
+Subject: [PATCH] ntdll, server: Return the in-process sync fd when an event is
+ created.
+
+A thread that creates an event nearly always waits on it or signals it
+next, which costs a second server request to fetch the object's
+in-process synchronization fd. A program that creates, uses and closes
+a short-lived event per job pays three server round trips per event.
+
+Let create_event send the fd along with the new handle when the client
+asks for it, and cache it at once, so the first wait or signal needs no
+further request.
+---
+ dlls/ntdll/unix/sync.c         | 39 ++++++++++++++++++++++++----------
+ include/wine/server_protocol.h |  8 +++++--
+ server/event.c                 |  3 +++
+ server/inproc_sync.c           | 16 ++++++++++++++
+ server/object.h                |  1 +
+ server/protocol.def            |  4 ++++
+ server/request_handlers.h      |  8 +++++--
+ server/request_trace.h         |  4 ++++
+ 8 files changed, 68 insertions(+), 15 deletions(-)
+
+diff --git a/dlls/ntdll/unix/sync.c b/dlls/ntdll/unix/sync.c
+index 6a87354..b0ede5e 100644
+--- a/dlls/ntdll/unix/sync.c
++++ b/dlls/ntdll/unix/sync.c
+@@ -691,6 +691,21 @@ static struct inproc_sync *get_cached_inproc_sync( HANDLE handle )
+     return cache;
+ }
+ 
++static void receive_inproc_sync( HANDLE handle, int type, unsigned int access, unsigned int shm_idx,
++                                 struct inproc_sync *sync )
++{
++    obj_handle_t fd_handle;
++
++    sync->refcount = 1;
++    sync->fd = wine_server_receive_fd( &fd_handle );
++    assert( wine_server_ptr_handle(fd_handle) == handle );
++    sync->access = access;
++    sync->type = type;
++    sync->closed = 0;
++    sync->serial = 0;
++    sync->shm_idx = do_esync() ? shm_idx : 0;
++}
++
+ /* fd_cache_mutex must be held to avoid races with other thread receiving fds */
+ static NTSTATUS get_server_inproc_sync( HANDLE handle, struct inproc_sync *sync )
+ {
+@@ -700,17 +715,7 @@ static NTSTATUS get_server_inproc_sync( HANDLE handle, struct inproc_sync *sync
+     {
+         req->handle = wine_server_obj_handle( handle );
+         if (!(ret = wine_server_call( req )))
+-        {
+-            obj_handle_t fd_handle;
+-            sync->refcount = 1;
+-            sync->fd = wine_server_receive_fd( &fd_handle );
+-            assert( wine_server_ptr_handle(fd_handle) == handle );
+-            sync->access = reply->access;
+-            sync->type = reply->type;
+-            sync->closed = 0;
+-            sync->serial = 0;
+-            sync->shm_idx = do_esync() ? reply->fsync_shm_idx : 0;
+-        }
++            receive_inproc_sync( handle, reply->type, reply->access, reply->fsync_shm_idx, sync );
+     }
+     SERVER_END_REQ;
+ 
+@@ -1223,6 +1228,9 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
+     unsigned int ret;
+     data_size_t len;
+     struct object_attributes *objattr;
++    struct inproc_sync sync;
++    BOOL inproc = !do_fsync() && inproc_device_fd >= 0;
++    sigset_t sigset;
+ 
+     TRACE( "access %#x, name %s, type %u, state %u\n", access,
+            attr ? debugstr_us(attr->ObjectName) : "(null)", type, state );
+@@ -1231,16 +1239,25 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
+     if (type != NotificationEvent && type != SynchronizationEvent) return STATUS_INVALID_PARAMETER;
+     if ((ret = alloc_object_attributes( attr, &objattr, &len ))) return ret;
+ 
++    if (inproc) server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
+     SERVER_START_REQ( create_event )
+     {
+         req->access = access;
+         req->manual_reset = (type == NotificationEvent);
+         req->initial_state = state;
++        req->inproc_sync = inproc;
+         wine_server_add_data( req, objattr, len );
+         ret = wine_server_call( req );
+         *handle = wine_server_ptr_handle( reply->handle );
++        if (reply->inproc_type)
++        {
++            receive_inproc_sync( *handle, reply->inproc_type, reply->inproc_access, reply->inproc_shm_idx, &sync );
++            if (sync.fd < 0 || (do_esync() && !sync.shm_idx)) release_inproc_sync( &sync );
++            else release_inproc_sync( cache_inproc_sync( *handle, &sync ) );
++        }
+     }
+     SERVER_END_REQ;
++    if (inproc) server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
+ 
+     free( objattr );
+     return ret;
+diff --git a/include/wine/server_protocol.h b/include/wine/server_protocol.h
+index 6aa2381..f506c42 100644
+--- a/include/wine/server_protocol.h
++++ b/include/wine/server_protocol.h
+@@ -1742,13 +1742,17 @@ struct create_event_request
+     unsigned int access;
+     int          manual_reset;
+     int          initial_state;
++    int          inproc_sync;
+     /* VARARG(objattr,object_attributes); */
++    char __pad_28[4];
+ };
+ struct create_event_reply
+ {
+     struct reply_header __header;
+     obj_handle_t handle;
+-    char __pad_12[4];
++    int          inproc_type;
++    unsigned int inproc_access;
++    unsigned int inproc_shm_idx;
+ };
+ 
+ 
+@@ -7551,6 +7555,6 @@ union generic_reply
+     struct release_kept_inproc_sync_reply release_kept_inproc_sync_reply;
+ };
+ 
+-#define SERVER_PROTOCOL_VERSION 938
++#define SERVER_PROTOCOL_VERSION 939
+ 
+ #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
+diff --git a/server/event.c b/server/event.c
+index b70e9e0..e23aa65 100644
+--- a/server/event.c
++++ b/server/event.c
+@@ -393,6 +393,9 @@ DECL_HANDLER(create_event)
+         else
+             reply->handle = alloc_handle_no_access_check( current->process, event,
+                                                           req->access, objattr->attributes );
++        if (reply->handle && req->inproc_sync &&
++            (reply->inproc_type = send_inproc_sync_fd( &event->obj, reply->handle, &reply->inproc_shm_idx )))
++            reply->inproc_access = get_handle_access( current->process, reply->handle );
+         release_object( event );
+     }
+ 
+diff --git a/server/inproc_sync.c b/server/inproc_sync.c
+index 2800590..e82bbbe 100644
+--- a/server/inproc_sync.c
++++ b/server/inproc_sync.c
+@@ -605,6 +605,22 @@ static int get_obj_inproc_sync( struct object *obj, int *type, unsigned int *shm
+ 
+ #endif /* NTSYNC_IOC_EVENT_READ */
+ 
++int send_inproc_sync_fd( struct object *obj, obj_handle_t handle, unsigned int *shm_idx )
++{
++    unsigned int status = get_error(), idx = 0;
++    int fd, type = 0;
++
++    if (do_fsync() || (fd = get_obj_inproc_sync( obj, &type, &idx )) < 0) type = 0;
++    else if (do_esync() && !(*shm_idx = esync_grab( get_process_id( current->process ), idx ))) type = 0;
++    else if (send_client_fd( current->process, fd, handle ) < 0)
++    {
++        if (*shm_idx) esync_client_release( get_process_id( current->process ), *shm_idx );
++        type = 0;
++    }
++    set_error( status );
++    return type;
++}
++
+ DECL_HANDLER(get_inproc_sync_fd)
+ {
+     struct object *obj;
+diff --git a/server/object.h b/server/object.h
+index 3c4d0bf..833049c 100644
+--- a/server/object.h
++++ b/server/object.h
+@@ -250,6 +250,7 @@ extern void abandon_d3dkmt_mutexes( struct thread *thread );
+ struct inproc_sync;
+ extern int get_inproc_device_fd(void);
+ extern int get_inproc_sync_fd( struct inproc_sync *sync );
++extern int send_inproc_sync_fd( struct object *obj, obj_handle_t handle, unsigned int *shm_idx );
+ extern struct inproc_sync *create_inproc_internal_sync( int manual, int signaled );
+ extern struct inproc_sync *create_inproc_event_sync( int manual, int signaled );
+ extern struct inproc_sync *create_inproc_semaphore_sync( unsigned int initial, unsigned int max );
+diff --git a/server/protocol.def b/server/protocol.def
+index ad3a5b8..15075a6 100644
+--- a/server/protocol.def
++++ b/server/protocol.def
+@@ -1573,9 +1573,13 @@ struct cpu_topology_override
+     unsigned int access;        /* wanted access rights */
+     int          manual_reset;  /* manual reset event */
+     int          initial_state; /* initial state of the event */
++    int          inproc_sync;
+     VARARG(objattr,object_attributes); /* object attributes */
+ @REPLY
+     obj_handle_t handle;        /* handle to the event */
++    int          inproc_type;
++    unsigned int inproc_access;
++    unsigned int inproc_shm_idx;
+ @END
+ 
+ /* Event operation */
+diff --git a/server/request_handlers.h b/server/request_handlers.h
+index 2236a61..2b7738a 100644
+--- a/server/request_handlers.h
++++ b/server/request_handlers.h
+@@ -928,9 +928,13 @@ C_ASSERT( sizeof(struct select_reply) == 16 );
+ C_ASSERT( offsetof(struct create_event_request, access) == 12 );
+ C_ASSERT( offsetof(struct create_event_request, manual_reset) == 16 );
+ C_ASSERT( offsetof(struct create_event_request, initial_state) == 20 );
+-C_ASSERT( sizeof(struct create_event_request) == 24 );
++C_ASSERT( offsetof(struct create_event_request, inproc_sync) == 24 );
++C_ASSERT( sizeof(struct create_event_request) == 32 );
+ C_ASSERT( offsetof(struct create_event_reply, handle) == 8 );
+-C_ASSERT( sizeof(struct create_event_reply) == 16 );
++C_ASSERT( offsetof(struct create_event_reply, inproc_type) == 12 );
++C_ASSERT( offsetof(struct create_event_reply, inproc_access) == 16 );
++C_ASSERT( offsetof(struct create_event_reply, inproc_shm_idx) == 20 );
++C_ASSERT( sizeof(struct create_event_reply) == 24 );
+ C_ASSERT( offsetof(struct event_op_request, handle) == 12 );
+ C_ASSERT( offsetof(struct event_op_request, op) == 16 );
+ C_ASSERT( sizeof(struct event_op_request) == 24 );
+diff --git a/server/request_trace.h b/server/request_trace.h
+index f1224ec..f3d12a5 100644
+--- a/server/request_trace.h
++++ b/server/request_trace.h
+@@ -465,12 +465,16 @@ static void dump_create_event_request( const struct create_event_request *req )
+     fprintf( stderr, " access=%08x", req->access );
+     fprintf( stderr, ", manual_reset=%d", req->manual_reset );
+     fprintf( stderr, ", initial_state=%d", req->initial_state );
++    fprintf( stderr, ", inproc_sync=%d", req->inproc_sync );
+     dump_varargs_object_attributes( ", objattr=", cur_size );
+ }
+ 
+ static void dump_create_event_reply( const struct create_event_reply *req )
+ {
+     fprintf( stderr, " handle=%04x", req->handle );
++    fprintf( stderr, ", inproc_type=%d", req->inproc_type );
++    fprintf( stderr, ", inproc_access=%08x", req->inproc_access );
++    fprintf( stderr, ", inproc_shm_idx=%08x", req->inproc_shm_idx );
+ }
+ 
+ static void dump_event_op_request( const struct event_op_request *req )
+-- 
+2.43.0
+
