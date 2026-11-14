@@ -1,0 +1,188 @@
+From 6bee346c7e1f159fecbdb7ac23c986b3d7192f95 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Thu, 12 Nov 2026 15:32:20 -0500
+Subject: [PATCH] ntdll: Do not hold fd_cache_mutex across close_handle for
+ in-process sync objects.
+
+---
+ dlls/ntdll/unix/server.c       | 10 ++++-
+ dlls/ntdll/unix/sync.c         | 74 ++++++++++++++++++++++++----------
+ dlls/ntdll/unix/unix_private.h |  2 +
+ 3 files changed, 63 insertions(+), 23 deletions(-)
+
+diff --git a/dlls/ntdll/unix/server.c b/dlls/ntdll/unix/server.c
+index 4c02243..e596835 100644
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -2043,6 +2043,7 @@ NTSTATUS WINAPI NtClose( HANDLE handle )
+     sigset_t sigset;
+     HANDLE port;
+     unsigned int ret;
++    void *sync;
+     int fd;
+ 
+     if (HandleToLong( handle ) >= ~5 && HandleToLong( handle ) <= ~0)
+@@ -2055,7 +2056,7 @@ NTSTATUS WINAPI NtClose( HANDLE handle )
+     /* always remove the cached fd; if the server request fails we'll just
+      * retrieve it again */
+     fd = remove_fd_from_cache( handle );
+-    close_inproc_sync( handle );
++    if ((sync = begin_close_inproc_sync( handle ))) mutex_unlock( &fd_cache_mutex );
+ 
+     SERVER_START_REQ( close_handle )
+     {
+@@ -2064,7 +2065,12 @@ NTSTATUS WINAPI NtClose( HANDLE handle )
+     }
+     SERVER_END_REQ;
+ 
+-    server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
++    if (sync)
++    {
++        end_close_inproc_sync( sync );
++        pthread_sigmask( SIG_SETMASK, &sigset, NULL );
++    }
++    else server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
+ 
+     if (fd != -1) close( fd );
+ 
+diff --git a/dlls/ntdll/unix/sync.c b/dlls/ntdll/unix/sync.c
+index b0ede5e..03ec551 100644
+--- a/dlls/ntdll/unix/sync.c
++++ b/dlls/ntdll/unix/sync.c
+@@ -730,6 +730,16 @@ static NTSTATUS get_server_inproc_sync( HANDLE handle, struct inproc_sync *sync
+     return ret;
+ }
+ 
++static BOOL is_closing_inproc_sync( HANDLE handle )
++{
++    unsigned int entry, idx = inproc_sync_handle_to_index( handle, &entry );
++    struct inproc_sync *cache;
++
++    if (entry >= INPROC_SYNC_CACHE_ENTRIES || !inproc_sync_cache[entry]) return FALSE;
++    cache = &inproc_sync_cache[entry][idx];
++    return InterlockedCompareExchange( &cache->refcount, 0, 0 ) && cache->closed == 2;
++}
++
+ /* returns a pointer to a cache entry; if the object could not be cached,
+  * returns "cache" instead, which should be allocated on stack */
+ static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_type, ACCESS_MASK desired_access,
+@@ -737,6 +747,7 @@ static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_ty
+ {
+     struct inproc_sync *sync;
+     sigset_t sigset;
++    BOOL closing;
+     NTSTATUS ret;
+ 
+     /* try to find it in the cache already */
+@@ -755,12 +766,13 @@ static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_ty
+         server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
+         if (!(sync = get_cached_inproc_sync( handle )))
+         {
++            closing = is_closing_inproc_sync( handle );
+             if ((ret = get_server_inproc_sync( handle, stack )))
+             {
+                 server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
+                 return ret;
+             }
+-            sync = cache_inproc_sync( handle, stack );
++            sync = closing ? stack : cache_inproc_sync( handle, stack );
+         }
+         server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
+     }
+@@ -815,32 +827,46 @@ static NTSTATUS keep_inproc_sync( HANDLE handle, unsigned int serial )
+     return ret;
+ }
+ 
+-/* caller must hold fd_cache_mutex */
+-void close_inproc_sync( HANDLE handle )
++void *begin_close_inproc_sync( HANDLE handle )
+ {
+     struct inproc_sync *cache;
+ 
+     if (do_fsync())
+     {
+         fsync_close( handle );
+-        return;
+-    }
+-    if (inproc_device_fd < 0) return;
+-    if ((cache = get_cached_inproc_sync( handle )))
+-    {
+-        cache->closed = 1;
+-        /* One reference is the handle's and one is ours; any other belongs to a
+-         * thread in the middle of an operation, typically a wait, which can still
+-         * acquire a mutex through the fd. The server must then still know the
+-         * mutex to abandon it if that thread dies, so have it keep the mutex under
+-         * this entry's serial until the last user releases the entry. */
+-        if (cache->type != INPROC_SYNC_MUTEX || InterlockedCompareExchange( &cache->refcount, 0, 0 ) <= 2
+-            || keep_inproc_sync( handle, cache->serial ))
+-            cache->serial = 0;
+-        /* once for the reference we just grabbed, and once for the handle */
+-        release_inproc_sync( cache );
+-        release_inproc_sync( cache );
++        return NULL;
+     }
++    if (inproc_device_fd < 0) return NULL;
++    if (!(cache = get_cached_inproc_sync( handle ))) return NULL;
++    cache->closed = 2;
++    /* One reference is the handle's and one is ours; any other belongs to a
++     * thread in the middle of an operation, typically a wait, which can still
++     * acquire a mutex through the fd. The server must then still know the
++     * mutex to abandon it if that thread dies, so have it keep the mutex under
++     * this entry's serial until the last user releases the entry. */
++    if (cache->type != INPROC_SYNC_MUTEX || InterlockedCompareExchange( &cache->refcount, 0, 0 ) <= 2
++        || keep_inproc_sync( handle, cache->serial ))
++        cache->serial = 0;
++    release_inproc_sync( cache );
++    if (cache->type != INPROC_SYNC_INTERNAL) return cache;
++    end_close_inproc_sync( cache );
++    return NULL;
++}
++
++void end_close_inproc_sync( void *sync )
++{
++    struct inproc_sync *cache = sync;
++
++    cache->closed = 1;
++    release_inproc_sync( cache );
++}
++
++/* caller must hold fd_cache_mutex */
++void close_inproc_sync( HANDLE handle )
++{
++    void *sync = begin_close_inproc_sync( handle );
++
++    if (sync) end_close_inproc_sync( sync );
+ }
+ 
+ static NTSTATUS inproc_release_semaphore( HANDLE handle, ULONG count, ULONG *prev_count )
+@@ -1253,7 +1279,13 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
+         {
+             receive_inproc_sync( *handle, reply->inproc_type, reply->inproc_access, reply->inproc_shm_idx, &sync );
+             if (sync.fd < 0 || (do_esync() && !sync.shm_idx)) release_inproc_sync( &sync );
+-            else release_inproc_sync( cache_inproc_sync( *handle, &sync ) );
++            else
++            {
++                unsigned int tries = 64;
++
++                while (tries-- && is_closing_inproc_sync( *handle )) sched_yield();
++                release_inproc_sync( cache_inproc_sync( *handle, &sync ) );
++            }
+         }
+     }
+     SERVER_END_REQ;
+diff --git a/dlls/ntdll/unix/unix_private.h b/dlls/ntdll/unix/unix_private.h
+index 19374cb..cc820b3 100644
+--- a/dlls/ntdll/unix/unix_private.h
++++ b/dlls/ntdll/unix/unix_private.h
+@@ -426,6 +426,8 @@ extern NTSTATUS wow64_wine_spawnvp( void *args );
+ extern void dbg_init(void);
+ 
+ extern void close_inproc_sync( HANDLE handle );
++extern void *begin_close_inproc_sync( HANDLE handle );
++extern void end_close_inproc_sync( void *sync );
+ 
+ extern NTSTATUS call_user_apc_dispatcher( CONTEXT *context_ptr, unsigned int flags, ULONG_PTR arg1, ULONG_PTR arg2,
+                                           ULONG_PTR arg3, PNTAPCFUNC func, NTSTATUS status );
+-- 
+2.43.0
+

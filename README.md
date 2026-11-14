@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-12.3)</b></summary>
+<summary><b>Pins (11-12.7)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -60,6 +60,31 @@ Wine and FEX patches apply at build time as before. The 32-bit lost wake fix (11
 stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. New in 11-12.1 besides GE-Proton11-12:
 two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
 code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
+
+11-12.7 is 11-12.6 plus one fix for slow starts from removable storage.
+`patches/wine-hotfixes/pending/ntdll-skip-listing-case-folding-dir-for-missing-file.patch`: when a file is missing from
+a folder whose filesystem already matches names without regard to case, ntdll reports it missing straight away instead
+of reading the whole folder to look for a differently cased name (PR #26).
+
+11-12.6 is 11-12.5 plus two fixes for slow starts, most visible when the program is installed on removable storage.
+`patches/wine-hotfixes/pending/ntdll-skip-xattr-queries-on-unsupported-filesystems.patch`: once a filesystem reports
+that it has no extended attributes, ntdll stops asking it for the DOS attribute on every file.
+`patches/wine-hotfixes/pending/ntdll-server-reuse-closed-private-events.patch`: closing an unnamed, unshared event keeps
+its handle and sync fd for the next `NtCreateEvent`, so a create and close pair no longer costs two server requests
+(server protocol 940) (PR #19).
+
+11-12.5 is 11-12.4 plus two ntdll fixes for programs that create, wait on and close events in a tight loop across
+threads. `patches/wine-hotfixes/pending/ntdll-server-return-event-sync-fd-on-create.patch`: `create_event` returns the
+in-process sync fd with the handle, so the first wait or signal needs no second server request (server protocol 939).
+`patches/wine-hotfixes/pending/ntdll-close-sync-handle-outside-fd-cache-mutex.patch`: `NtClose` no longer holds
+`fd_cache_mutex` across the server request for events, mutexes and semaphores, so other threads keep running (PR #17).
+
+11-12.4 is 11-12.3 plus two Wine fixes. `patches/wine-hotfixes/pending/ntdll-arm64ec-process-breakpoint-rip.patch`:
+ntdll's ARM64EC process breakpoint handler steps over its `brk` at the AMD64-layout context's `Rip`, so games that debug
+a copy of themselves (Metal Gear Solid V: Ground Zeroes) no longer raise the same breakpoint forever at startup (PR #16).
+`patches/wine-hotfixes/pending/server-directory-users-ace.patch`: directories the owner can read get a read and execute
+ACE for Users, so Steam's DRM helper (`steamservice.exe /runfunc`) finds one and old Steam DRM games stop failing with
+error 55 (PR #12).
 
 11-12.3 is 11-12.2 plus winex11 text-field reporting (`patches/wine-hotfixes/pending/winex11-report-ime-context-focus.patch`):
 winex11 implements `EnableIMEContext`, so when the focused window gains or loses an input context (a game's chat or search

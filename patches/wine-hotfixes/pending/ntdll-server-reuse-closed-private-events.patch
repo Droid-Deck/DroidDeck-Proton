@@ -1,0 +1,651 @@
+From 147f9872b9e6ebf713b08af0e0f078f6aec39e36 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Thu, 12 Nov 2026 21:27:23 -0500
+Subject: [PATCH] ntdll, server: Reuse closed private events without a server
+ request.
+
+An anonymous event that only its creating handle has ever referred to is
+kept by the client when that handle is closed, and handed back by the
+next matching NtCreateEvent. The server publishes a mark for such an event
+in a shared read-only mapping and withdraws it as soon as the handle is
+looked up, duplicated, made inheritable or closed on the server side.
+---
+ dlls/ntdll/unix/server.c       |  53 +++++++-----
+ dlls/ntdll/unix/sync.c         | 142 +++++++++++++++++++++++++++++++--
+ dlls/ntdll/unix/unix_private.h |   2 +
+ include/wine/server_protocol.h |  11 ++-
+ server/event.c                 |   4 +
+ server/handle.c                |   3 +
+ server/object.c                |  65 +++++++++++++++
+ server/object.h                |   4 +
+ server/protocol.def            |   8 ++
+ server/request_handlers.h      |   7 +-
+ server/request_trace.h         |   3 +
+ server/thread.c                |   3 +
+ 12 files changed, 275 insertions(+), 30 deletions(-)
+
+diff --git a/dlls/ntdll/unix/server.c b/dlls/ntdll/unix/server.c
+index e596835..4b9d5b1 100644
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -1790,6 +1790,12 @@ size_t server_init_process(void)
+                 inproc_device_fd = wine_server_receive_fd( &handle );
+                 assert( handle == reply->inproc_device );
+             }
++            if (reply->event_marks)
++            {
++                int marks_fd = wine_server_receive_fd( &handle );
++                assert( handle == EVENT_MARKS_TOKEN );
++                init_event_marks( marks_fd );
++            }
+         }
+     }
+     SERVER_END_REQ;
+@@ -2044,35 +2050,40 @@ NTSTATUS WINAPI NtClose( HANDLE handle )
+     HANDLE port;
+     unsigned int ret;
+     void *sync;
+-    int fd;
++    int fd, parked;
+ 
+     if (HandleToLong( handle ) >= ~5 && HandleToLong( handle ) <= ~0)
+         return STATUS_SUCCESS;
+ 
+-    /* hold fd_cache_mutex to prevent the fd from being added again between the
+-     * call to remove_fd_from_cache and close_handle */
+-    server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
++    if ((parked = park_inproc_event( handle )) > 0) return STATUS_SUCCESS;
++    if (parked < 0) ret = STATUS_INVALID_HANDLE;
++    else
++    {
++        /* hold fd_cache_mutex to prevent the fd from being added again between the
++         * call to remove_fd_from_cache and close_handle */
++        server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
+ 
+-    /* always remove the cached fd; if the server request fails we'll just
+-     * retrieve it again */
+-    fd = remove_fd_from_cache( handle );
+-    if ((sync = begin_close_inproc_sync( handle ))) mutex_unlock( &fd_cache_mutex );
++        /* always remove the cached fd; if the server request fails we'll just
++         * retrieve it again */
++        fd = remove_fd_from_cache( handle );
++        if ((sync = begin_close_inproc_sync( handle ))) mutex_unlock( &fd_cache_mutex );
+ 
+-    SERVER_START_REQ( close_handle )
+-    {
+-        req->handle = wine_server_obj_handle( handle );
+-        ret = wine_server_call( req );
+-    }
+-    SERVER_END_REQ;
++        SERVER_START_REQ( close_handle )
++        {
++            req->handle = wine_server_obj_handle( handle );
++            ret = wine_server_call( req );
++        }
++        SERVER_END_REQ;
+ 
+-    if (sync)
+-    {
+-        end_close_inproc_sync( sync );
+-        pthread_sigmask( SIG_SETMASK, &sigset, NULL );
+-    }
+-    else server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
++        if (sync)
++        {
++            end_close_inproc_sync( sync );
++            pthread_sigmask( SIG_SETMASK, &sigset, NULL );
++        }
++        else server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
+ 
+-    if (fd != -1) close( fd );
++        if (fd != -1) close( fd );
++    }
+ 
+     if (ret != STATUS_INVALID_HANDLE || !handle) return ret;
+     if (!peb->BeingDebugged) return ret;
+diff --git a/dlls/ntdll/unix/sync.c b/dlls/ntdll/unix/sync.c
+index 03ec551..c3ec341 100644
+--- a/dlls/ntdll/unix/sync.c
++++ b/dlls/ntdll/unix/sync.c
+@@ -545,6 +545,8 @@ struct inproc_sync
+     unsigned short closed;    /* fd has been closed but sync is still referenced */
+     unsigned int   serial;    /* id of this cache entry for keep_inproc_sync, 0 if none */
+     unsigned int   shm_idx;
++    unsigned int   mark;
++    unsigned int   tag;
+ };
+ 
+ static LONG next_inproc_sync_serial;
+@@ -552,7 +554,7 @@ static LONG next_inproc_sync_serial;
+ /* a cache block is 64K, a multiple of any host page size; the entries need not fill it */
+ #define INPROC_SYNC_CACHE_BLOCK_BYTES 65536
+ #define INPROC_SYNC_CACHE_BLOCK_SIZE  (INPROC_SYNC_CACHE_BLOCK_BYTES / sizeof(struct inproc_sync))
+-#define INPROC_SYNC_CACHE_ENTRIES     128
++#define INPROC_SYNC_CACHE_ENTRIES     176
+ 
+ static struct inproc_sync *inproc_sync_cache[INPROC_SYNC_CACHE_ENTRIES];
+ static struct inproc_sync inproc_sync_cache_initial_block[INPROC_SYNC_CACHE_BLOCK_SIZE];
+@@ -613,6 +615,8 @@ static struct inproc_sync *cache_inproc_sync( HANDLE handle, struct inproc_sync
+     cache->closed = sync->closed;
+     while (!(cache->serial = InterlockedIncrement( &next_inproc_sync_serial ))) ;
+     cache->shm_idx = sync->shm_idx;
++    cache->mark = sync->mark;
++    cache->tag = sync->tag;
+     /* Make sure we set the other members before the refcount; this store needs
+      * release semantics [paired with the load in get_cached_inproc_sync()].
+      * Set the refcount to 2 (one for the handle, one for the caller). */
+@@ -678,7 +682,7 @@ static struct inproc_sync *get_cached_inproc_sync( HANDLE handle )
+      * cache_inproc_sync()] */
+     if (!interlocked_inc_if_nonzero( &cache->refcount )) return NULL;
+ 
+-    if (cache->closed)
++    if (__atomic_load_n( &cache->closed, __ATOMIC_SEQ_CST ))
+     {
+         /* The object is still being used, but "handle" has been closed. The
+          * handle value might have been reused for another object in the
+@@ -692,7 +696,7 @@ static struct inproc_sync *get_cached_inproc_sync( HANDLE handle )
+ }
+ 
+ static void receive_inproc_sync( HANDLE handle, int type, unsigned int access, unsigned int shm_idx,
+-                                 struct inproc_sync *sync )
++                                 unsigned int mark, unsigned int tag, struct inproc_sync *sync )
+ {
+     obj_handle_t fd_handle;
+ 
+@@ -704,6 +708,8 @@ static void receive_inproc_sync( HANDLE handle, int type, unsigned int access, u
+     sync->closed = 0;
+     sync->serial = 0;
+     sync->shm_idx = do_esync() ? shm_idx : 0;
++    sync->mark = mark;
++    sync->tag = tag;
+ }
+ 
+ /* fd_cache_mutex must be held to avoid races with other thread receiving fds */
+@@ -715,7 +721,7 @@ static NTSTATUS get_server_inproc_sync( HANDLE handle, struct inproc_sync *sync
+     {
+         req->handle = wine_server_obj_handle( handle );
+         if (!(ret = wine_server_call( req )))
+-            receive_inproc_sync( handle, reply->type, reply->access, reply->fsync_shm_idx, sync );
++            receive_inproc_sync( handle, reply->type, reply->access, reply->fsync_shm_idx, 0, 0, sync );
+     }
+     SERVER_END_REQ;
+ 
+@@ -740,6 +746,17 @@ static BOOL is_closing_inproc_sync( HANDLE handle )
+     return InterlockedCompareExchange( &cache->refcount, 0, 0 ) && cache->closed == 2;
+ }
+ 
++static BOOL is_parked_inproc_sync( HANDLE handle )
++{
++    unsigned int entry, idx = inproc_sync_handle_to_index( handle, &entry );
++    struct inproc_sync *cache;
++
++    if (entry >= INPROC_SYNC_CACHE_ENTRIES || !inproc_sync_cache[entry]) return FALSE;
++    cache = &inproc_sync_cache[entry][idx];
++    return InterlockedCompareExchange( &cache->refcount, 0, 0 ) &&
++           __atomic_load_n( &cache->closed, __ATOMIC_SEQ_CST ) == 3;
++}
++
+ /* returns a pointer to a cache entry; if the object could not be cached,
+  * returns "cache" instead, which should be allocated on stack */
+ static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_type, ACCESS_MASK desired_access,
+@@ -766,6 +783,11 @@ static NTSTATUS get_inproc_sync( HANDLE handle, enum inproc_sync_type desired_ty
+         server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
+         if (!(sync = get_cached_inproc_sync( handle )))
+         {
++            if (is_parked_inproc_sync( handle ))
++            {
++                server_leave_uninterrupted_section( &fd_cache_mutex, &sigset );
++                return STATUS_INVALID_HANDLE;
++            }
+             closing = is_closing_inproc_sync( handle );
+             if ((ret = get_server_inproc_sync( handle, stack )))
+             {
+@@ -827,6 +849,109 @@ static NTSTATUS keep_inproc_sync( HANDLE handle, unsigned int serial )
+     return ret;
+ }
+ 
++#define PARKED_EVENTS 32
++
++static HANDLE parked_events[2][PARKED_EVENTS];
++static const UINT64 *event_marks;
++
++void init_event_marks( int fd )
++{
++    void *ptr;
++
++    if (fd < 0) return;
++    ptr = mmap( NULL, EVENT_MARK_SLOTS * sizeof(*event_marks), PROT_READ, MAP_SHARED, fd, 0 );
++    close( fd );
++    if (ptr != MAP_FAILED) event_marks = ptr;
++}
++
++static int event_mark_state( const struct inproc_sync *sync, BOOL *manual )
++{
++    UINT64 word;
++
++    if (!event_marks || !sync->mark) return 0;
++    word = __atomic_load_n( &event_marks[sync->mark], __ATOMIC_SEQ_CST );
++    if ((word >> 32) != sync->tag || (word & EVENT_MARK_CLOSED)) return -1;
++    *manual = !!(word & EVENT_MARK_MANUAL);
++    return !!(word & EVENT_MARK_PRIVATE);
++}
++
++int park_inproc_event( HANDLE handle )
++{
++    unsigned int entry, idx = inproc_sync_handle_to_index( handle, &entry ), i;
++    struct inproc_sync *cache;
++    unsigned short closed = 0;
++    BOOL manual;
++
++    if (!event_marks) return 0;
++    if (entry >= INPROC_SYNC_CACHE_ENTRIES || !inproc_sync_cache[entry]) return 0;
++    cache = &inproc_sync_cache[entry][idx];
++    if (!interlocked_inc_if_nonzero( &cache->refcount )) return 0;
++    if (__atomic_load_n( &cache->closed, __ATOMIC_SEQ_CST ) == 3)
++    {
++        release_inproc_sync( cache );
++        return -1;
++    }
++    if (cache->type != INPROC_SYNC_EVENT || cache->access != EVENT_ALL_ACCESS ||
++        event_mark_state( cache, &manual ) <= 0 ||
++        !__atomic_compare_exchange_n( &cache->closed, &closed, 3, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST ))
++    {
++        release_inproc_sync( cache );
++        return closed == 3 ? -1 : 0;
++    }
++    if (__atomic_load_n( &cache->refcount, __ATOMIC_SEQ_CST ) == 2)
++    {
++        for (i = 0; i < PARKED_EVENTS; i++)
++        {
++            if (InterlockedCompareExchangePointer( &parked_events[manual][i], handle, 0 )) continue;
++            release_inproc_sync( cache );
++            return 1;
++        }
++    }
++    __atomic_store_n( &cache->closed, 0, __ATOMIC_SEQ_CST );
++    release_inproc_sync( cache );
++    return 0;
++}
++
++static HANDLE take_parked_event( BOOL manual, BOOL state )
++{
++    unsigned int entry, idx, i;
++    struct inproc_sync *cache;
++    HANDLE handle;
++    BOOL type;
++    int mark;
++
++    for (i = 0; i < PARKED_EVENTS; i++)
++    {
++        if (!__atomic_load_n( &parked_events[manual][i], __ATOMIC_RELAXED )) continue;
++        if (!(handle = InterlockedExchangePointer( &parked_events[manual][i], 0 ))) continue;
++        idx = inproc_sync_handle_to_index( handle, &entry );
++        cache = &inproc_sync_cache[entry][idx];
++        if ((mark = event_mark_state( cache, &type )) < 0)
++        {
++            cache->serial = 0;
++            __atomic_store_n( &cache->closed, 1, __ATOMIC_SEQ_CST );
++            release_inproc_sync( cache );
++            continue;
++        }
++        if (!mark)
++        {
++            __atomic_store_n( &cache->closed, 0, __ATOMIC_SEQ_CST );
++            NtClose( handle );
++            continue;
++        }
++        if (do_esync())
++        {
++            if (state) esync_set_event( cache->fd, cache->shm_idx, NULL );
++            else esync_reset_event( cache->fd, cache->shm_idx, NULL );
++        }
++        else if (state) linux_set_event_obj( cache->fd, NULL );
++        else linux_reset_event_obj( cache->fd, NULL );
++        __atomic_store_n( &cache->closed, 0, __ATOMIC_SEQ_CST );
++        return handle;
++    }
++    return 0;
++}
++
+ void *begin_close_inproc_sync( HANDLE handle )
+ {
+     struct inproc_sync *cache;
+@@ -1263,6 +1388,12 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
+ 
+     *handle = 0;
+     if (type != NotificationEvent && type != SynchronizationEvent) return STATUS_INVALID_PARAMETER;
++    if (inproc && event_marks && access == EVENT_ALL_ACCESS &&
++        (!attr || (attr->Length == sizeof(*attr) && !attr->RootDirectory && !attr->ObjectName &&
++                   !(attr->Attributes & ~(OBJ_OPENIF | OBJ_CASE_INSENSITIVE)) &&
++                   !attr->SecurityDescriptor && !attr->SecurityQualityOfService)) &&
++        (*handle = take_parked_event( type == NotificationEvent, state )))
++        return STATUS_SUCCESS;
+     if ((ret = alloc_object_attributes( attr, &objattr, &len ))) return ret;
+ 
+     if (inproc) server_enter_uninterrupted_section( &fd_cache_mutex, &sigset );
+@@ -1277,7 +1408,8 @@ NTSTATUS WINAPI NtCreateEvent( HANDLE *handle, ACCESS_MASK access, const OBJECT_
+         *handle = wine_server_ptr_handle( reply->handle );
+         if (reply->inproc_type)
+         {
+-            receive_inproc_sync( *handle, reply->inproc_type, reply->inproc_access, reply->inproc_shm_idx, &sync );
++            receive_inproc_sync( *handle, reply->inproc_type, reply->inproc_access, reply->inproc_shm_idx,
++                                 reply->inproc_mark, reply->inproc_tag, &sync );
+             if (sync.fd < 0 || (do_esync() && !sync.shm_idx)) release_inproc_sync( &sync );
+             else
+             {
+diff --git a/dlls/ntdll/unix/unix_private.h b/dlls/ntdll/unix/unix_private.h
+index cc820b3..717cb09 100644
+--- a/dlls/ntdll/unix/unix_private.h
++++ b/dlls/ntdll/unix/unix_private.h
+@@ -426,6 +426,8 @@ extern NTSTATUS wow64_wine_spawnvp( void *args );
+ extern void dbg_init(void);
+ 
+ extern void close_inproc_sync( HANDLE handle );
++extern int park_inproc_event( HANDLE handle );
++extern void init_event_marks( int fd );
+ extern void *begin_close_inproc_sync( HANDLE handle );
+ extern void end_close_inproc_sync( void *sync );
+ 
+diff --git a/include/wine/server_protocol.h b/include/wine/server_protocol.h
+index f506c42..4ebd6a1 100644
+--- a/include/wine/server_protocol.h
++++ b/include/wine/server_protocol.h
+@@ -1294,9 +1294,9 @@ struct init_first_thread_reply
+     timeout_t    server_start;
+     unsigned int session_id;
+     obj_handle_t inproc_device;
++    int          event_marks;
+     data_size_t  info_size;
+     /* VARARG(machines,ushorts); */
+-    char __pad_36[4];
+ };
+ 
+ 
+@@ -1753,6 +1753,8 @@ struct create_event_reply
+     int          inproc_type;
+     unsigned int inproc_access;
+     unsigned int inproc_shm_idx;
++    unsigned int inproc_mark;
++    unsigned int inproc_tag;
+ };
+ 
+ 
+@@ -6425,6 +6427,11 @@ struct d3dkmt_mutex_release_reply
+ 
+ #define FSYNC_SHM_PAGE_SIZE 0x10000
+ #define FSYNC_USED_BY_SERVER 0x7eadfeef
++#define EVENT_MARK_SLOTS     0x100000
++#define EVENT_MARK_PRIVATE   1
++#define EVENT_MARK_MANUAL    2
++#define EVENT_MARK_CLOSED    4
++#define EVENT_MARKS_TOKEN    0x7eadeef1
+ 
+ enum fsync_type
+ {
+@@ -7555,6 +7562,6 @@ union generic_reply
+     struct release_kept_inproc_sync_reply release_kept_inproc_sync_reply;
+ };
+ 
+-#define SERVER_PROTOCOL_VERSION 939
++#define SERVER_PROTOCOL_VERSION 940
+ 
+ #endif /* __WINE_WINE_SERVER_PROTOCOL_H */
+diff --git a/server/event.c b/server/event.c
+index e23aa65..615eaf3 100644
+--- a/server/event.c
++++ b/server/event.c
+@@ -395,7 +395,11 @@ DECL_HANDLER(create_event)
+                                                           req->access, objattr->attributes );
+         if (reply->handle && req->inproc_sync &&
+             (reply->inproc_type = send_inproc_sync_fd( &event->obj, reply->handle, &reply->inproc_shm_idx )))
++        {
+             reply->inproc_access = get_handle_access( current->process, reply->handle );
++            if (!name.len && !root && !sd && !(objattr->attributes & OBJ_INHERIT))
++                reply->inproc_mark = event->obj.private_slot = alloc_event_mark( req->manual_reset, &reply->inproc_tag );
++        }
+         release_object( event );
+     }
+ 
+diff --git a/server/handle.c b/server/handle.c
+index 3169c82..7aad65c 100644
+--- a/server/handle.c
++++ b/server/handle.c
+@@ -434,6 +434,7 @@ unsigned int close_handle( struct process *process, obj_handle_t handle )
+     if (!(entry = get_handle( process, handle ))) return STATUS_INVALID_HANDLE;
+     if (entry->access & RESERVED_CLOSE_PROTECT) return STATUS_HANDLE_NOT_CLOSABLE;
+     obj = entry->ptr;
++    if (obj->private_slot) share_event_mark( obj->private_slot, 1 );
+ 
+     /* the close_handle callback may terminate the process itself (e.g. the last
+      * handle to a kill-on-close job containing it), which frees its handle table */
+@@ -495,6 +496,7 @@ struct object *get_handle_obj( struct process *process, obj_handle_t handle,
+             return NULL;
+         }
+         obj = entry->ptr;
++        if (obj->private_slot) share_event_mark( obj->private_slot, 0 );
+         if (ops && (obj->ops != ops))
+         {
+             set_error( STATUS_OBJECT_TYPE_MISMATCH );  /* not the right type */
+@@ -577,6 +579,7 @@ static int set_handle_flags( struct process *process, obj_handle_t handle,
+         set_error( STATUS_INVALID_HANDLE );
+         return -1;
+     }
++    if (mask && entry->ptr->private_slot) share_event_mark( entry->ptr->private_slot, 0 );
+     old_access = entry->access;
+     mask  = (mask << RESERVED_SHIFT) & RESERVED_ALL;
+     flags = (flags << RESERVED_SHIFT) & mask;
+diff --git a/server/object.c b/server/object.c
+index 103a208..af30a8d 100644
+--- a/server/object.c
++++ b/server/object.c
+@@ -28,6 +28,8 @@
+ #include <unistd.h>
+ #include <stdarg.h>
+ #include <sys/types.h>
++#include <stdint.h>
++#include <sys/mman.h>
+ #ifdef HAVE_VALGRIND_MEMCHECK_H
+ #include <valgrind/memcheck.h>
+ #endif
+@@ -308,6 +310,7 @@ void *alloc_object( const struct object_ops *ops )
+         obj->refcount     = 1;
+         obj->handle_count = 0;
+         obj->is_permanent = 0;
++        obj->private_slot = 0;
+         obj->ops          = ops;
+         obj->name         = NULL;
+         obj->sd           = NULL;
+@@ -543,6 +546,67 @@ struct object *grab_object( void *ptr )
+ }
+ 
+ /* release an object (i.e. decrement its refcount) */
++static int event_marks_fd = -2;
++static uint64_t *event_marks;
++static unsigned int *free_event_marks;
++static unsigned int free_event_mark_count, free_event_mark_size;
++static unsigned int next_event_mark = 1, next_event_tag;
++
++int get_event_marks_fd(void)
++{
++    if (event_marks_fd != -2) return event_marks_fd;
++    event_marks_fd = -1;
++#ifdef HAVE_MEMFD_CREATE
++    if ((event_marks_fd = memfd_create( "wine-event-marks", MFD_CLOEXEC )) == -1) return -1;
++    if (ftruncate( event_marks_fd, EVENT_MARK_SLOTS * sizeof(*event_marks) ) != -1)
++        event_marks = mmap( NULL, EVENT_MARK_SLOTS * sizeof(*event_marks), PROT_READ | PROT_WRITE,
++                            MAP_SHARED, event_marks_fd, 0 );
++    if (!event_marks || event_marks == MAP_FAILED)
++    {
++        close( event_marks_fd );
++        event_marks = NULL;
++        event_marks_fd = -1;
++    }
++#endif
++    return event_marks_fd;
++}
++
++unsigned int alloc_event_mark( int manual, unsigned int *tag )
++{
++    unsigned int idx;
++
++    if (get_event_marks_fd() < 0) return 0;
++    if (free_event_mark_count) idx = free_event_marks[--free_event_mark_count];
++    else if (next_event_mark < EVENT_MARK_SLOTS) idx = next_event_mark++;
++    else return 0;
++    if (!++next_event_tag) next_event_tag = 1;
++    *tag = next_event_tag;
++    __atomic_store_n( &event_marks[idx], ((uint64_t)next_event_tag << 32) | EVENT_MARK_PRIVATE |
++                      (manual ? EVENT_MARK_MANUAL : 0), __ATOMIC_SEQ_CST );
++    return idx;
++}
++
++void share_event_mark( unsigned int idx, int closed )
++{
++    if (closed) __atomic_or_fetch( &event_marks[idx], EVENT_MARK_CLOSED, __ATOMIC_SEQ_CST );
++    __atomic_and_fetch( &event_marks[idx], ~(uint64_t)EVENT_MARK_PRIVATE, __ATOMIC_SEQ_CST );
++}
++
++static void free_event_mark( unsigned int idx )
++{
++    __atomic_store_n( &event_marks[idx], EVENT_MARK_CLOSED, __ATOMIC_SEQ_CST );
++    if (free_event_mark_count == free_event_mark_size)
++    {
++        unsigned int size = max( 256, free_event_mark_size * 2 );
++        unsigned int *ptr = realloc( free_event_marks, size * sizeof(*ptr) );
++
++        if (!ptr) return;
++        free_event_marks = ptr;
++        free_event_mark_size = size;
++    }
++    free_event_marks[free_event_mark_count++] = idx;
++}
++
+ void release_object( void *ptr )
+ {
+     struct object *obj = (struct object *)ptr;
+@@ -554,6 +618,7 @@ void release_object( void *ptr )
+         assert( list_empty( &obj->wait_queue ));
+         free_kernel_objects( obj );
+         unlink_named_object( obj );
++        if (obj->private_slot) free_event_mark( obj->private_slot );
+         obj->ops->destroy( obj );
+         free_object( obj );
+     }
+diff --git a/server/object.h b/server/object.h
+index 833049c..2fa71b8 100644
+--- a/server/object.h
++++ b/server/object.h
+@@ -120,6 +120,7 @@ struct object
+     struct object_name       *name;
+     struct security_descriptor *sd;
+     unsigned int              is_permanent:1;
++    unsigned int              private_slot;
+ #ifdef DEBUG_OBJECTS
+     struct list               obj_list;
+ #endif
+@@ -248,6 +249,9 @@ extern void abandon_d3dkmt_mutexes( struct thread *thread );
+ /* in-process synchronization functions */
+ 
+ struct inproc_sync;
++extern int get_event_marks_fd(void);
++extern unsigned int alloc_event_mark( int manual, unsigned int *tag );
++extern void share_event_mark( unsigned int idx, int closed );
+ extern int get_inproc_device_fd(void);
+ extern int get_inproc_sync_fd( struct inproc_sync *sync );
+ extern int send_inproc_sync_fd( struct object *obj, obj_handle_t handle, unsigned int *shm_idx );
+diff --git a/server/protocol.def b/server/protocol.def
+index 15075a6..2d27a61 100644
+--- a/server/protocol.def
++++ b/server/protocol.def
+@@ -1273,6 +1273,7 @@ struct cpu_topology_override
+     timeout_t    server_start; /* server start time */
+     unsigned int session_id;   /* process session id */
+     obj_handle_t inproc_device;/* inproc device fd in flight with this handle */
++    int          event_marks;
+     data_size_t  info_size;    /* total size of startup info */
+     VARARG(machines,ushorts);  /* array of supported machines */
+ @END
+@@ -1580,6 +1581,8 @@ struct cpu_topology_override
+     int          inproc_type;
+     unsigned int inproc_access;
+     unsigned int inproc_shm_idx;
++    unsigned int inproc_mark;
++    unsigned int inproc_tag;
+ @END
+ 
+ /* Event operation */
+@@ -4489,6 +4492,11 @@ enum inproc_sync_type
+ /* fsync definitions */
+ #define FSYNC_SHM_PAGE_SIZE 0x10000
+ #define FSYNC_USED_BY_SERVER 0x7eadfeef
++#define EVENT_MARK_SLOTS     0x100000
++#define EVENT_MARK_PRIVATE   1
++#define EVENT_MARK_MANUAL    2
++#define EVENT_MARK_CLOSED    4
++#define EVENT_MARKS_TOKEN    0x7eadeef1
+ 
+ enum fsync_type
+ {
+diff --git a/server/request_handlers.h b/server/request_handlers.h
+index 2b7738a..216699f 100644
+--- a/server/request_handlers.h
++++ b/server/request_handlers.h
+@@ -762,7 +762,8 @@ C_ASSERT( offsetof(struct init_first_thread_reply, tid) == 12 );
+ C_ASSERT( offsetof(struct init_first_thread_reply, server_start) == 16 );
+ C_ASSERT( offsetof(struct init_first_thread_reply, session_id) == 24 );
+ C_ASSERT( offsetof(struct init_first_thread_reply, inproc_device) == 28 );
+-C_ASSERT( offsetof(struct init_first_thread_reply, info_size) == 32 );
++C_ASSERT( offsetof(struct init_first_thread_reply, event_marks) == 32 );
++C_ASSERT( offsetof(struct init_first_thread_reply, info_size) == 36 );
+ C_ASSERT( sizeof(struct init_first_thread_reply) == 40 );
+ C_ASSERT( offsetof(struct init_thread_request, unix_tid) == 12 );
+ C_ASSERT( offsetof(struct init_thread_request, reply_fd) == 16 );
+@@ -934,7 +935,9 @@ C_ASSERT( offsetof(struct create_event_reply, handle) == 8 );
+ C_ASSERT( offsetof(struct create_event_reply, inproc_type) == 12 );
+ C_ASSERT( offsetof(struct create_event_reply, inproc_access) == 16 );
+ C_ASSERT( offsetof(struct create_event_reply, inproc_shm_idx) == 20 );
+-C_ASSERT( sizeof(struct create_event_reply) == 24 );
++C_ASSERT( offsetof(struct create_event_reply, inproc_mark) == 24 );
++C_ASSERT( offsetof(struct create_event_reply, inproc_tag) == 28 );
++C_ASSERT( sizeof(struct create_event_reply) == 32 );
+ C_ASSERT( offsetof(struct event_op_request, handle) == 12 );
+ C_ASSERT( offsetof(struct event_op_request, op) == 16 );
+ C_ASSERT( sizeof(struct event_op_request) == 24 );
+diff --git a/server/request_trace.h b/server/request_trace.h
+index f3d12a5..1c8fdf4 100644
+--- a/server/request_trace.h
++++ b/server/request_trace.h
+@@ -154,6 +154,7 @@ static void dump_init_first_thread_reply( const struct init_first_thread_reply *
+     dump_timeout( ", server_start=", &req->server_start );
+     fprintf( stderr, ", session_id=%08x", req->session_id );
+     fprintf( stderr, ", inproc_device=%04x", req->inproc_device );
++    fprintf( stderr, ", event_marks=%d", req->event_marks );
+     fprintf( stderr, ", info_size=%u", req->info_size );
+     dump_varargs_ushorts( ", machines=", cur_size );
+ }
+@@ -475,6 +476,8 @@ static void dump_create_event_reply( const struct create_event_reply *req )
+     fprintf( stderr, ", inproc_type=%d", req->inproc_type );
+     fprintf( stderr, ", inproc_access=%08x", req->inproc_access );
+     fprintf( stderr, ", inproc_shm_idx=%08x", req->inproc_shm_idx );
++    fprintf( stderr, ", inproc_mark=%08x", req->inproc_mark );
++    fprintf( stderr, ", inproc_tag=%08x", req->inproc_tag );
+ }
+ 
+ static void dump_event_op_request( const struct event_op_request *req )
+diff --git a/server/thread.c b/server/thread.c
+index 4b0c7e4..bb5623e 100644
+--- a/server/thread.c
++++ b/server/thread.c
+@@ -1869,6 +1869,9 @@ DECL_HANDLER(init_first_thread)
+         reply->inproc_device = get_process_id( process ) | 1;
+         send_client_fd( process, fd, reply->inproc_device );
+     }
++    if (reply->inproc_device && reply->inproc_device != FSYNC_USED_BY_SERVER && get_event_marks_fd() >= 0 &&
++        send_client_fd( process, get_event_marks_fd(), EVENT_MARKS_TOKEN ) >= 0)
++        reply->event_marks = 1;
+ }
+ 
+ /* initialize a new thread */
+-- 
+2.43.0
+
