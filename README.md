@@ -39,7 +39,7 @@ Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-12.7)</b></summary>
+<summary><b>Pins (11-12.8)</b></summary>
 
 | Component | Commit |
 |---|---|
@@ -60,6 +60,14 @@ Wine and FEX patches apply at build time as before. The 32-bit lost wake fix (11
 stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. New in 11-12.1 besides GE-Proton11-12:
 two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
 code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
+
+11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
+`patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
+FFmpeg's H.264 parser still holds, so a video's last frame is no longer lost. Burnout Paradise Remastered waited for
+the last frame of its first intro video forever and now plays both intros (PR #13).
+`patches/wine-hotfixes/pending/winedmo-accept-input-after-drain.patch`: once a drain has returned every frame, the
+decoder takes new input again without waiting for a flush, so a client that drains and keeps feeding the same decoder no
+longer gets `MF_E_NOTACCEPTING` forever (PR #14).
 
 11-12.7 is 11-12.6 plus one fix for slow starts from removable storage.
 `patches/wine-hotfixes/pending/ntdll-skip-listing-case-folding-dir-for-missing-file.patch`: when a file is missing from
