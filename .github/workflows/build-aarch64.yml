@@ -278,6 +278,8 @@ jobs:
           has dlls/ntdll/unix/server.c "if ((sync = begin_close_inproc_sync( handle ))) mutex_unlock( &fd_cache_mutex );"
           has dlls/ntdll/unix/server.c "if ((parked = park_inproc_event( handle )) > 0) return STATUS_SUCCESS;"
           has dlls/ntdll/unix/file.c "if (xattr_less( st )) return ret;"
+          has dlls/winedmo/unix_transform.c "static NTSTATUS send_drain_packets( struct unix_transform *t )"
+          has dlls/winedmo/unix_transform.c "t->drain_packet_pending && !send_drain_packets( t )"
           exit $fail
 
   verify:
