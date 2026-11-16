@@ -1,0 +1,25 @@
+language: en-US
+early_access: false
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  sequence_diagrams: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: true
+  path_instructions:
+    - path: "patches/**"
+      instructions: >-
+        These are Wine, FEX and Proton patches applied with patch -Np1 --forward. Check that hunk line counts are
+        correct, the patch applies after the earlier patches in banner-proton/apply-deferred-game-patches.sh,
+        locking, errno handling, ARM64EC versus x86-64 behaviour, and that behaviour matches Windows.
+        Reject game-specific hacks when a general fix exists.
+    - path: "banner-proton/**"
+      instructions: >-
+        Check shell quoting, set -euo pipefail behaviour and patch ordering.
+    - path: "**/*"
+      instructions: >-
+        Flag any mention of AI tools or generated-by footers in code, commits or PR text.
