@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Tapuuk <177422350+Tapuuk@users.noreply.github.com>
+Date: Sat, 14 Nov 2026 13:40:00 +0100
+Subject: [PATCH] ntdll: Read PE images into anonymous memory only on noexec
+ mounts.
+
+Reading every image into anonymous memory gives each Wine process its own copy of every DLL, which can't be shared or dropped. Only do it for images on a noexec mount, where the file can't be made executable. WINE_IMAGE_ANON=1 or 0 forces it on or off.
+---
+ dlls/ntdll/unix/virtual.c | 34 ++++++++++++++++++++++++++++++----
+ 1 file changed, 30 insertions(+), 4 deletions(-)
+
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+index 2428e86..93c3ce4 100644
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -40,6 +40,9 @@
+ #ifdef HAVE_SYS_SYSINFO_H
+ # include <sys/sysinfo.h>
+ #endif
++#ifdef HAVE_SYS_STATVFS_H
++# include <sys/statvfs.h>
++#endif
+ #ifdef HAVE_SYS_SYSCALL_H
+ # include <sys/syscall.h>
+ #endif
+@@ -3849,6 +3852,32 @@ static NTSTATUS map_image_view( struct file_view **view_ret, struct pe_image_inf
+  *
+  * Map a PE image section into memory.
+  */
++/***********************************************************************
++ *           image_needs_anon_copy
++ *
++ * Images on a noexec mount can't be made executable from the file.
++ */
++static BOOL image_needs_anon_copy( int fd )
++{
++    static int mode = -1;
++#ifdef HAVE_SYS_STATVFS_H
++    struct statvfs vfs;
++#endif
++
++    if (mode == -1)
++    {
++        const char *env = getenv( "WINE_IMAGE_ANON" );
++        mode = (env && *env) ? (*env != '0') : 2;
++    }
++    if (mode != 2) return mode;
++#ifdef HAVE_SYS_STATVFS_H
++    if (fstatvfs( fd, &vfs ) == -1) return TRUE;
++    return (vfs.f_flag & ST_NOEXEC) != 0;
++#else
++    return TRUE;
++#endif
++}
++
+ static NTSTATUS virtual_map_image( HANDLE mapping, void **addr_ptr, SIZE_T *size_ptr, HANDLE shared_file,
+                                    ULONG_PTR limit_low, ULONG_PTR limit_high, ULONG alloc_type,
+                                    USHORT machine, struct pe_image_info *image_info,
+@@ -3893,11 +3922,8 @@ static NTSTATUS virtual_map_image( HANDLE mapping, void **addr_ptr, SIZE_T *size
+     status = map_image_view( &view, image_info, size, limit_low, limit_high, alloc_type );
+     if (status) goto done;
+ 
+-    /* Force PE images to come up as anonymous memory so later mprotect() calls
+-     * that flip text sections to PROT_EXEC succeed on strict-W^X kernels
+-     * (e.g. Android arm64) and noexec filesystems (e.g. an SD card). */
+     status = map_image_into_view( view, nt_name, unix_fd, image_info, machine, shared_fd,
+-                                  needs_close, TRUE );
++                                  needs_close, image_needs_anon_copy( unix_fd ) );
+     if (status == STATUS_SUCCESS)
+     {
+         if (offset)
+-- 
+2.56.0
+
