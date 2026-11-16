@@ -61,6 +61,12 @@ stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. 
 two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
 code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
 
+Unreleased: one fix for Death Stranding Director's Cut crashing when a graphics setting is applied.
+`patches/wine-hotfixes/pending/mmdevapi-skip-death-stranding-code-hooks-on-arm64ec.patch`: the game's
+controller-effects hooks patch its settings code to call register-preserving x86-64 thunks, which ARM64EC builds replace
+with plain C functions, so the game resumed with clobbered registers. The hooks are now skipped on ARM64EC; BB's
+controller-speaker routing stays off there.
+
 11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
 `patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
 FFmpeg's H.264 parser still holds, so a video's last frame is no longer lost. Burnout Paradise Remastered waited for
