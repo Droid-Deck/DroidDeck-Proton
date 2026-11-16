@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: KeegantheVeganat0r <58369898+KeegantheVeganat0r@users.noreply.github.com>
+Date: Mon, 16 Nov 2026 03:00:00 +0000
+Subject: [PATCH] mmdevapi: Skip Death Stranding code hooks on ARM64EC
+
+The controller-output hooks overwrite Death Stranding's settings code with
+calls that expect register-preserving x86-64 thunks: the settings-entry hook
+must return the Wwise audio system in R8 and keep RCX/RDX intact, and the
+UI-store hooks must perform the original store themselves.
+
+Those thunks are assembled only for x86-64. On ARM64EC the fallback maps them
+to the plain C functions, so the game resumes with clobbered registers and an
+unperformed store. Applying any graphics setting then corrupts the settings
+transaction (access violation at ds.exe+0x2DCBA00 or a stack-cookie fast-fail
+at ds.exe+0x3B033D0).
+
+Do not install the code hooks where the thunks are unavailable.
+---
+ dlls/mmdevapi/main.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/dlls/mmdevapi/main.c b/dlls/mmdevapi/main.c
+--- a/dlls/mmdevapi/main.c
++++ b/dlls/mmdevapi/main.c
+@@ -545,6 +545,12 @@ static BOOL enable_death_stranding_controller_effects(void)
+     if (GetEnvironmentVariableW(L"PROTON_DEATH_STRANDING_CONTROLLER_EFFECTS", value, ARRAY_SIZE(value)) != 1
+             || value[0] != '1')
+         return FALSE;
++#if !defined(__x86_64__) || defined(__arm64ec__)
++    /* The game reaches these hooks from x86-64 code and relies on the register-preserving
++     * thunks above, which cannot be assembled for ARM64EC. */
++    WARN("Death Stranding controller output hooks are not supported on this architecture.\n");
++    return FALSE;
++#endif
+     if (!(nt = RtlImageNtHeader(module))) return FALSE;
+ 
+     section = IMAGE_FIRST_SECTION(nt);
+-- 
+2.43.0
+
