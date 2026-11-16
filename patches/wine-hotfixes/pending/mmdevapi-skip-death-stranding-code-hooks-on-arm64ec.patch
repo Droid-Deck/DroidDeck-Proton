@@ -16,19 +16,17 @@ at ds.exe+0x3B033D0).
 
 Do not install the code hooks where the thunks are unavailable.
 ---
- dlls/mmdevapi/main.c | 6 ++++++
- 1 file changed, 6 insertions(+)
+ dlls/mmdevapi/main.c | 4 ++++
+ 1 file changed, 4 insertions(+)
 
 diff --git a/dlls/mmdevapi/main.c b/dlls/mmdevapi/main.c
 --- a/dlls/mmdevapi/main.c
 +++ b/dlls/mmdevapi/main.c
-@@ -545,6 +545,12 @@ static BOOL enable_death_stranding_controller_effects(void)
+@@ -545,6 +545,10 @@ static BOOL enable_death_stranding_controller_effects(void)
      if (GetEnvironmentVariableW(L"PROTON_DEATH_STRANDING_CONTROLLER_EFFECTS", value, ARRAY_SIZE(value)) != 1
              || value[0] != '1')
          return FALSE;
 +#if !defined(__x86_64__) || defined(__arm64ec__)
-+    /* The game reaches these hooks from x86-64 code and relies on the register-preserving
-+     * thunks above, which cannot be assembled for ARM64EC. */
 +    WARN("Death Stranding controller output hooks are not supported on this architecture.\n");
 +    return FALSE;
 +#endif
