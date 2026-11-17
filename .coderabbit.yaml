@@ -1,25 +1,60 @@
 language: en-US
 early_access: false
+tone_instructions: >-
+  Prioritize actionable correctness, security, and runtime regressions. Keep
+  feedback concise. Do not request explanatory code comments; preserve license
+  headers and compiler-consumed annotations.
 reviews:
   profile: chill
   request_changes_workflow: false
   high_level_summary: true
+  high_level_summary_in_walkthrough: true
   poem: false
   sequence_diagrams: false
+  tools:
+    github-checks:
+      enabled: false
   auto_review:
     enabled: true
     auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
     drafts: true
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: "off"
+    description:
+      mode: "off"
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    simplify:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
   path_instructions:
     - path: "patches/**"
       instructions: >-
         These are Wine, FEX and Proton patches applied with patch -Np1 --forward. Check that hunk line counts are
         correct, the patch applies after the earlier patches in banner-proton/apply-deferred-game-patches.sh,
         locking, errno handling, ARM64EC versus x86-64 behaviour, and that behaviour matches Windows.
-        Reject game-specific hacks when a general fix exists.
+        Check Android constraints: noexec storage mounts, SELinux and W^X limits on executable mappings,
+        and memory use per Wine process. Reject game-specific hacks when a general fix exists.
     - path: "banner-proton/**"
       instructions: >-
         Check shell quoting, set -euo pipefail behaviour and patch ordering.
+    - path: ".github/workflows/**"
+      instructions: >-
+        Check job permissions, triggers, cache keys, source and binary guard markers, artifact paths and
+        release conditions. Verify checks apply to the current PR head.
     - path: "**/*"
       instructions: >-
-        Flag any mention of AI tools or generated-by footers in code, commits or PR text.
+        Flag any mention of AI tools or generated-by footers in code, commits or PR text. Flag committed
+        binaries or blobs.
