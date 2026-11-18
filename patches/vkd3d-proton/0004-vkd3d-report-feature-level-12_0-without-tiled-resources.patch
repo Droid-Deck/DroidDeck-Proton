@@ -1,0 +1,32 @@
+From: Kurt Himebauch <136133082+xXJSONDeruloXx@users.noreply.github.com>
+Subject: [PATCH] vkd3d: Report feature level 12_0 without Tiled Resources Tier 2.
+
+Turnip exposes sparse 2D images only on Adreno 7xx gen3 and newer
+(ubwc_all_formats_compatible), so the Adreno 740, 650 and older report no
+tiled resources and stop at 11_1. Games that only ask for a 12_0 adapter,
+such as Hades II and Kingdom Come: Deliverance II, then refuse to start.
+Report 12_0 when the other 12_0 requirements hold. TiledResourcesTier is
+not raised, so games that query it still see the real tier.
+---
+--- a/libs/vkd3d/device.c
++++ b/libs/vkd3d/device.c
+@@ -9703,11 +9703,18 @@ static void d3d12_device_caps_init_feature_level(struct d3d12_device *device)
+             vk_info->device_limits.maxPerStageDescriptorStorageImages >= D3D12_UAV_SLOT_COUNT)
+         caps->max_feature_level = D3D_FEATURE_LEVEL_11_1;
+ 
++    /* Turnip only exposes sparse 2D images on Adreno 7xx gen3 and newer, so older Adreno GPUs
++     * report no tiled resources and would stop at 11_1. Games that only check for a 12_0 adapter
++     * then refuse to start. Report 12_0 without it; TiledResourcesTier stays truthful for games
++     * that query it. */
+     if (caps->max_feature_level >= D3D_FEATURE_LEVEL_11_1 &&
+-            caps->options.TiledResourcesTier >= D3D12_TILED_RESOURCES_TIER_2 &&
+             caps->options.ResourceBindingTier >= D3D12_RESOURCE_BINDING_TIER_2 &&
+             caps->options.TypedUAVLoadAdditionalFormats)
++    {
+         caps->max_feature_level = D3D_FEATURE_LEVEL_12_0;
++        if (caps->options.TiledResourcesTier < D3D12_TILED_RESOURCES_TIER_2)
++            INFO("Reporting feature level 12_0 without Tiled Resources Tier 2.\n");
++    }
+ 
+     if (caps->max_feature_level >= D3D_FEATURE_LEVEL_12_0 && caps->options.ROVsSupported &&
+             caps->options.ConservativeRasterizationTier >= D3D12_CONSERVATIVE_RASTERIZATION_TIER_1)
