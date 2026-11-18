@@ -52,8 +52,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v=$(tr -d '[:space:]' < banner-proton/VERSION)
+          if [ "${{ inputs.publish }}" = true ] && [ "$GITHUB_REF" = refs/heads/main ] &&
+             [ "$(gh release view "DroidDeck-Proton-$v" -R "$GITHUB_REPOSITORY" --json isPrerelease -q .isPrerelease 2>/dev/null)" = false ]; then
+            echo "::error::DroidDeck-Proton-$v is already a published stable release; bump banner-proton/VERSION before publishing"
+            exit 1
+          fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "build_name=DroidDeck-Proton-$v-aarch64" >> "$GITHUB_OUTPUT"
           echo "display_name=DroidDeck-Proton $v" >> "$GITHUB_OUTPUT"
