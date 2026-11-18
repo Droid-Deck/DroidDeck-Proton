@@ -67,6 +67,11 @@ controller-effects hooks patch its settings code to call register-preserving x86
 with plain C functions, so the game resumed with clobbered registers. The hooks are now skipped on ARM64EC; BB's
 controller-speaker routing stays off there.
 
+Unreleased: vkd3d-proton reports D3D12 feature level 12_0 on GPUs without Tiled Resources Tier 2
+(`patches/vkd3d-proton/0004`). Turnip exposes sparse 2D images only on Adreno 7xx gen3 and newer, so the Adreno 740,
+650 and older stopped at 11_1 and games that ask for a 12_0 adapter (Hades II, Kingdom Come: Deliverance II) refused
+to start. The reported tiled-resources tier is unchanged.
+
 11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
 `patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
 FFmpeg's H.264 parser still holds, so a video's last frame is no longer lost. Burnout Paradise Remastered waited for
