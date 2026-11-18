@@ -52,6 +52,12 @@ apply_all_in_dir() {
     apply_patch "../patches/openvr/openvr-no-msvc-assumption.patch"
     popd
 
+    pushd piper
+    git reset --hard HEAD
+    git clean -xdf
+    apply_patch "../patches/piper/piper-forward-onnxruntime-dir.patch"
+    popd
+
     pushd vkd3d-proton
     git reset --hard HEAD
     git clean -xdf
