@@ -291,6 +291,8 @@ jobs:
           has dlls/winedmo/unix_transform.c "t->drain_packet_pending && !send_drain_packets( t )"
           has dlls/winedmo/unix_transform.c "reset_parser( t );" 2
           has dlls/winedmo/unix_transform.c "t->draining = false;" 2
+          has dlls/ntdll/rtl.c "NTSTATUS WINAPI NtQueryWnfStateData("
+          has dlls/ntdll/ntdll.spec "RtlUnsubscribeWnfStateChangeNotification(ptr)"
           exit $fail
 
   verify:

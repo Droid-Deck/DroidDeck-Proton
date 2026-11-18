@@ -1,0 +1,88 @@
+From: Kurt Himebauch <136133082+xXJSONDeruloXx@users.noreply.github.com>
+Subject: [PATCH] ntdll: Add WNF state query and subscription stubs.
+
+GameInput's redistributable service queries and subscribes to WNF state at
+startup. Without these exports Wine aborts the service, GameInputInitialize
+fails, and titles built against current GDKs refuse to start.
+---
+diff --git a/dlls/ntdll/ntdll.spec b/dlls/ntdll/ntdll.spec
+--- a/dlls/ntdll/ntdll.spec
++++ b/dlls/ntdll/ntdll.spec
+@@ -345,6 +345,7 @@
+ @ stdcall -syscall=0x0017 NtQueryValueKey(long ptr long ptr long ptr)
+ @ stdcall -syscall=0x0023 NtQueryVirtualMemory(long ptr long ptr long ptr)
+ @ stdcall -syscall=0x0049 NtQueryVolumeInformationFile(long ptr ptr long long)
++@ stdcall NtQueryWnfStateData(ptr ptr ptr ptr ptr ptr)
+ @ stdcall -syscall=0x0045 NtQueueApcThread(long ptr long long long)
+ @ stdcall -syscall NtQueueApcThreadEx(long long ptr long long long)
+ @ stdcall -syscall NtQueueApcThreadEx2(long long long ptr long long long)
+@@ -1054,6 +1055,7 @@
+ @ stdcall RtlStringFromGUID(ptr ptr)
+ @ stdcall RtlSubAuthorityCountSid(ptr)
+ @ stdcall RtlSubAuthoritySid(ptr long)
++@ stdcall RtlSubscribeWnfStateChangeNotification(ptr int64 long ptr ptr ptr long long)
+ @ stdcall RtlSubtreePredecessor(ptr)
+ @ stdcall RtlSubtreeSuccessor(ptr)
+ @ stdcall RtlSystemTimeToLocalTime(ptr ptr)
+@@ -1093,6 +1095,7 @@
+ # @ stub RtlUnlockBootStatusData
+ @ stdcall RtlUnlockHeap(long)
+ # @ stub RtlUnlockMemoryStreamRegion
++@ stdcall RtlUnsubscribeWnfStateChangeNotification(ptr)
+ @ stdcall -norelay RtlUnwind(ptr ptr ptr ptr)
+ @ stdcall -arch=!i386 RtlUnwindEx(ptr ptr ptr ptr ptr ptr)
+ @ stdcall RtlUpcaseUnicodeChar(long)
+@@ -1419,6 +1422,7 @@
+ @ stdcall -private ZwQueryValueKey(long ptr long ptr long ptr) NtQueryValueKey
+ @ stdcall -private ZwQueryVirtualMemory(long ptr long ptr long ptr) NtQueryVirtualMemory
+ @ stdcall -private ZwQueryVolumeInformationFile(long ptr ptr long long) NtQueryVolumeInformationFile
++@ stdcall -private ZwQueryWnfStateData(ptr ptr ptr ptr ptr ptr) NtQueryWnfStateData
+ @ stdcall -private ZwQueueApcThread(long ptr long long long) NtQueueApcThread
+ @ stdcall -private ZwQueueApcThreadEx(long long ptr long long long) NtQueueApcThreadEx
+ @ stdcall -private ZwQueueApcThreadEx2(long long long ptr long long long) NtQueueApcThreadEx2
+diff --git a/dlls/ntdll/rtl.c b/dlls/ntdll/rtl.c
+--- a/dlls/ntdll/rtl.c
++++ b/dlls/ntdll/rtl.c
+@@ -1694,3 +1694,42 @@
+     memcpy(device_form, unknown_form, form_length);
+     return STATUS_SUCCESS;
+ }
++
++/*********************************************************************
++ *           NtQueryWnfStateData [NTDLL.@]
++ */
++NTSTATUS WINAPI NtQueryWnfStateData( const void *name, const void *type_id, const void *scope,
++                                     ULONG *stamp, void *buffer, ULONG *size )
++{
++    FIXME( "%p %p %p %p %p %p: stub\n", name, type_id, scope, stamp, buffer, size );
++
++    if (stamp) *stamp = 0;
++    if (size) *size = 0;
++    return STATUS_SUCCESS;
++}
++
++/*********************************************************************
++ *           RtlSubscribeWnfStateChangeNotification [NTDLL.@]
++ */
++NTSTATUS WINAPI RtlSubscribeWnfStateChangeNotification( void **subscription, ULONGLONG name, ULONG stamp,
++                                                        void *callback, void *context, const void *type_id,
++                                                        ULONG group, ULONG flags )
++{
++    static int subscribed;
++
++    FIXME( "%p %s %lu %p %p %p %lu %#lx: stub\n", subscription, wine_dbgstr_longlong( name ), stamp,
++           callback, context, type_id, group, flags );
++
++    if (!subscription) return STATUS_INVALID_PARAMETER;
++    *subscription = &subscribed;
++    return STATUS_SUCCESS;
++}
++
++/*********************************************************************
++ *           RtlUnsubscribeWnfStateChangeNotification [NTDLL.@]
++ */
++NTSTATUS WINAPI RtlUnsubscribeWnfStateChangeNotification( void *subscription )
++{
++    FIXME( "%p: stub\n", subscription );
++    return STATUS_SUCCESS;
++}

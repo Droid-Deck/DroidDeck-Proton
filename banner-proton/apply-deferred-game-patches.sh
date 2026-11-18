@@ -28,6 +28,7 @@ apply "$root/patches/wine-hotfixes/pending/winedmo-accept-input-after-drain.patc
 apply "$root/patches/wine-hotfixes/pending/mmdevapi-skip-death-stranding-code-hooks-on-arm64ec.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-arm64ec-get-context-null.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-futex-entry-pool.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-wnf-state-stubs.patch"
 if [ -f "$root/FEX/CMakeLists.txt" ]; then
   cd "$root/FEX"
   for p in "$root"/patches/fex/*.patch; do
