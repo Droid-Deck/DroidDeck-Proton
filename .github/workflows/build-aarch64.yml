@@ -259,7 +259,7 @@ jobs:
           has include/wine/asm.h "ldr x16, [x18, #0x370]"
           has include/wine/asm.h "ldr x16, [x16, #8]"
           has server/file.c "security_unix_uid_to_sid( file_sd_owner( unix_fd, &st ) )"
-          has dlls/ntdll/sync.c "ret = wait_for_wake( &entry, timeout );"
+          has dlls/ntdll/sync.c "ret = wait_for_wake( entry, timeout );"
           has dlls/ntdll/unix/file.c "is_wine_install_fd( fd )"
           has dlls/ntdll/unix/file.c "else if (dir_folds_case( root_fd, dir, fd ))"
           has include/wine/asm.h "__ASM_NAME(\"__wine_syscall_dispatcher\")"
