@@ -56,7 +56,7 @@ index 0cda054f5c..a4ac72ebdf 100644
 +static void report_text_field( BOOL focused )
 +{
 +    static LONG seq;
-+    const char *launch = getenv( "DD_LAUNCH_DIR" ) ? getenv( "DD_LAUNCH_DIR" ) : getenv( "BL_LAUNCH_DIR" );
++    const char *launch = getenv( "DD_LAUNCH_DIR" ); if (!launch || !*launch) launch = getenv( "BL_LAUNCH_DIR" );
 +    char path[4096], temp[4096], text[512];
 +    int fd, len, written;
 +
