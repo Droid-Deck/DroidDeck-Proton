@@ -52,8 +52,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - id: v
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           v=$(tr -d '[:space:]' < banner-proton/VERSION)
+          if [ "${{ inputs.publish }}" = true ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+            state=$(bash .github/release-state.sh "DroidDeck-Proton-$v")
+            case "$state" in
+              stable) echo "::error::DroidDeck-Proton-$v is already a published stable release; bump banner-proton/VERSION before publishing"; exit 1 ;;
+              draft) echo "::error::DroidDeck-Proton-$v is an unpublished draft; publish or delete it before publishing"; exit 1 ;;
+            esac
+          fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "build_name=DroidDeck-Proton-$v-aarch64" >> "$GITHUB_OUTPUT"
           echo "display_name=DroidDeck-Proton $v" >> "$GITHUB_OUTPUT"
@@ -475,10 +484,18 @@ jobs:
           else
             kind="--prerelease=false --latest"
           fi
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" --clobber
-            gh release edit "$TAG" --notes-file "$notes" $kind
-          else
-            gh release create "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" \
-              --target "$GITHUB_SHA" $kind --title "DroidDeck-Proton ${{ needs.meta.outputs.version }}" --notes-file "$notes"
-          fi
+          state=$(bash ../.github/release-state.sh "$TAG")
+          case "$state" in
+            prerelease)
+              gh release upload "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" --clobber
+              gh release edit "$TAG" --notes-file "$notes" $kind
+              ;;
+            none)
+              gh release create "$TAG" "$NAME.tar.gz" "$NAME.sha512sum" "$NAME.build-info.json" \
+                --target "$GITHUB_SHA" $kind --title "DroidDeck-Proton ${{ needs.meta.outputs.version }}" --notes-file "$notes"
+              ;;
+            *)
+              echo "::error::$TAG is now a $state release; refusing to change it"
+              exit 1
+              ;;
+          esac
