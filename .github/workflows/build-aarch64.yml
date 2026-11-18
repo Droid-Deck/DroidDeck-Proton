@@ -291,6 +291,9 @@ jobs:
           has dlls/winedmo/unix_transform.c "t->drain_packet_pending && !send_drain_packets( t )"
           has dlls/winedmo/unix_transform.c "reset_parser( t );" 2
           has dlls/winedmo/unix_transform.c "t->draining = false;" 2
+          has dlls/ntdll/sec.c "NTSTATUS WINAPI RtlCheckTokenMembershipEx("
+          has dlls/rpcrt4/rpcrt4.spec "@ cdecl ObjectStublessClient32()"
+          has dlls/combase/combase.spec "rpcrt4.ObjectStublessClient" 30
           has dlls/ntdll/rtl.c "NTSTATUS WINAPI NtQueryWnfStateData("
           has dlls/ntdll/ntdll.spec "RtlUnsubscribeWnfStateChangeNotification(ptr)"
           exit $fail
