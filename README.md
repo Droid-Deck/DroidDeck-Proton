@@ -67,6 +67,12 @@ controller-effects hooks patch its settings code to call register-preserving x86
 with plain C functions, so the game resumed with clobbered registers. The hooks are now skipped on ARM64EC; BB's
 controller-speaker routing stays off there.
 
+Also unreleased: one fix for relocated 32-bit DLLs whose code reports as read-only.
+`patches/wine-hotfixes/pending/ntdll-relocate-dlls-before-protecting-sections.patch`: a DLL that misses its preferred
+base was fixed up by switching its sections to read-write and back, which under FEX with DEP off left its code pages
+reporting `PAGE_READONLY`, so hooking libraries refused to patch them. Such DLLs are now relocated while the mapping is
+still writable, before section protections are set.
+
 11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
 `patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
 FFmpeg's H.264 parser still holds, so a video's last frame is no longer lost. Burnout Paradise Remastered waited for
