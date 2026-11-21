@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Sat, 21 Nov 2026 12:00:00 -0500
+Subject: [PATCH] ntdll: Relocate DLLs before their section protections are set.
+
+A DLL without IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE whose preferred base
+is taken gets mapped somewhere else and is relocated on the PE side by
+perform_relocations(): every section is switched to PAGE_READWRITE, the
+fixups are applied, and the old protection is put back.
+
+Under the WOW64 FEX translator with DEP disabled for the process (as for
+any executable built without IMAGE_DLLCHARACTERISTICS_NX_COMPAT), the
+read-write step marks the code pages as executable and writable. Putting
+PAGE_EXECUTE_READ back does not clear that state, so the translator keeps
+them read-only for code invalidation and VirtualQuery() reports
+PAGE_READONLY on .text. A hooking library that checks the target is
+executable before patching it then refuses, and the program fails to
+start.
+
+The unix side already relocates dynamically based images while the view
+is still writable, before the section protections are set. Do the same
+for any relocatable DLL that did not land at its preferred base, and
+update ImageBase so perform_relocations() has nothing left to do and no
+protection change is needed. Executables, images with stripped
+relocations and images without a relocation directory keep the existing
+path.
+---
+ dlls/ntdll/unix/virtual.c | 19 ++++++++++++++-----
+ 1 file changed, 14 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/ntdll/unix/virtual.c b/dlls/ntdll/unix/virtual.c
+--- a/dlls/ntdll/unix/virtual.c
++++ b/dlls/ntdll/unix/virtual.c
+@@ -3496,15 +3496,24 @@ static NTSTATUS map_image_into_view( struct file_view *view, const UNICODE_STRIN
+ 
+     /* relocate to dynamic base */
+ 
+-    if (image_info->map_addr && (delta = image_info->map_addr - image_info->base))
++    if (image_info->map_addr)
++        delta = image_info->map_addr - image_info->base;
++    else if ((image_info->image_charact & IMAGE_FILE_DLL) &&
++             !(image_info->image_charact & IMAGE_FILE_RELOCS_STRIPPED) &&
++             get_data_dir( nt, total_size, IMAGE_DIRECTORY_ENTRY_BASERELOC ))
++        delta = (ULONG_PTR)ptr - image_info->base;
++    else
++        delta = 0;
++
++    if (delta)
+     {
+-        TRACE_(module)( "relocating %s dynamic base %lx -> %lx mapped at %p\n", debugstr_us(nt_name),
+-                        (ULONG_PTR)image_info->base, (ULONG_PTR)image_info->map_addr, ptr );
++        TRACE_(module)( "relocating %s base %lx -> %lx mapped at %p\n", debugstr_us(nt_name),
++                        (ULONG_PTR)image_info->base, (ULONG_PTR)(image_info->base + delta), ptr );
+ 
+         if (nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+-            ((IMAGE_NT_HEADERS64 *)nt)->OptionalHeader.ImageBase = image_info->map_addr;
++            ((IMAGE_NT_HEADERS64 *)nt)->OptionalHeader.ImageBase = image_info->base + delta;
+         else
+-            ((IMAGE_NT_HEADERS32 *)nt)->OptionalHeader.ImageBase = image_info->map_addr;
++            ((IMAGE_NT_HEADERS32 *)nt)->OptionalHeader.ImageBase = image_info->base + delta;
+ 
+         if ((dir = get_data_dir( nt, total_size, IMAGE_DIRECTORY_ENTRY_BASERELOC )))
+         {
+-- 
+2.43.0

@@ -277,6 +277,7 @@ jobs:
           has dlls/ntdll/unix/env.c "map_nls_file_as_view"
           has dlls/ntdll/unix/virtual.c "map_image_init_ntdll_dispatchers"
           has dlls/ntdll/unix/virtual.c "(is_machine_64bit( image_info->machine ) && (!disable_exe_aslr"
+          has dlls/ntdll/unix/virtual.c "delta = (ULONG_PTR)ptr - image_info->base;"
           has tools/winebuild/spec32.c "fixup_arm64x_import_thunks( data, st.st_size )"
           has tools/winebuild/spec32.c "pe_cover_rva( &pe, func, sizeof(hotpatch) + 6"
           has dlls/ntdll/signal_arm64ec.c "ldr x17, .Lhotpatch_seq"
