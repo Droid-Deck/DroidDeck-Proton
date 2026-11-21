@@ -1,0 +1,37 @@
+From 53691af5a05cd3db4941ebe647db75734b5f80bd Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Sat, 21 Nov 2026 11:20:52 -0500
+Subject: [PATCH] InvalidationTracker: drop DEP promotion when a range becomes
+ executable
+
+With DEP disabled, a readable but non-executable protection (for example
+PAGE_READWRITE while ntdll applies relocations) adds the range to
+DEPPromotedIntervals. Restoring an executable protection afterwards did
+not remove it, so the next RWX trap reprotected the range with
+GetTrapProt() as PAGE_READONLY instead of PAGE_EXECUTE_READ. Relocated
+32-bit DLL code then reported PAGE_READONLY to VirtualQuery and hooking
+libraries refused to patch it.
+
+Remove the range from DEPPromotedIntervals once it is given an
+executable protection, matching what already happens when it loses
+execute access.
+---
+ Source/Windows/Common/InvalidationTracker.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Source/Windows/Common/InvalidationTracker.cpp b/Source/Windows/Common/InvalidationTracker.cpp
+index 64485c8a4..023691475 100644
+--- a/Source/Windows/Common/InvalidationTracker.cpp
++++ b/Source/Windows/Common/InvalidationTracker.cpp
+@@ -68,6 +68,8 @@ void InvalidationTracker::HandleMemoryProtectionNotification(uint64_t Address, u
+       }
+       if (DEPDisabled && !HasExec) {
+         DEPPromotedIntervals.Insert(ProtInterval);
++      } else if (DEPDisabled) {
++        DEPPromotedIntervals.Remove(ProtInterval);
+       }
+       return true;
+     } else if (XIntervals.Intersect(ProtInterval)) {
+-- 
+2.43.0
+
