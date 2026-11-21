@@ -486,6 +486,30 @@ $(eval $(call rules-source,piper,$(SRCDIR)/piper))
 $(eval $(call rules-cmake,piper,x86_64,unix))
 $(eval $(call rules-cmake,piper,aarch64,unix))
 
+ONNXRUNTIME_VER := 1.14.1
+ONNXRUNTIME_NUPKG := microsoft.ml.onnxruntime.$(ONNXRUNTIME_VER).nupkg
+ONNXRUNTIME_NUPKG_URL := https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/$(ONNXRUNTIME_VER)
+ONNXRUNTIME_NUPKG_SHA256 := 3a277421efce94b5f91f4a5dc8efc1add99b4c01f547279d81098ffb4fafbb6d
+
+$(SRC)/contrib/$(ONNXRUNTIME_NUPKG):
+	mkdir -p $(SRC)/contrib
+	wget --no-use-server-timestamps -O $@ $(ONNXRUNTIME_NUPKG_URL) || (rm $@; false)
+	echo "$(ONNXRUNTIME_NUPKG_SHA256)  $@" | sha256sum -c - || (rm $@; false)
+
+$(OBJ)/onnxruntime-%/lib/libonnxruntime.so: $(SRC)/contrib/$(ONNXRUNTIME_NUPKG)
+	rm -rf $(OBJ)/onnxruntime-$* $(OBJ)/onnxruntime-$*-nupkg
+	mkdir -p $(OBJ)/onnxruntime-$*/include $(OBJ)/onnxruntime-$*/lib $(OBJ)/onnxruntime-$*-nupkg
+	cd $(OBJ)/onnxruntime-$*-nupkg && cmake -E tar xf $<
+	cp $(OBJ)/onnxruntime-$*-nupkg/build/native/include/*.h $(OBJ)/onnxruntime-$*/include/
+	cp $(OBJ)/onnxruntime-$*-nupkg/runtimes/linux-$(if $(filter aarch64,$*),arm64,x64)/native/libonnxruntime.so 		$(OBJ)/onnxruntime-$*/lib/libonnxruntime.so.$(ONNXRUNTIME_VER)
+	ln -sf libonnxruntime.so.$(ONNXRUNTIME_VER) $@
+	rm -rf $(OBJ)/onnxruntime-$*-nupkg
+
+PIPER_x86_64_CMAKE_ARGS += -DONNXRUNTIME_DIR=$(OBJ)/onnxruntime-x86_64
+PIPER_aarch64_CMAKE_ARGS += -DONNXRUNTIME_DIR=$(OBJ)/onnxruntime-aarch64
+$(OBJ)/.piper-x86_64-configure: $(OBJ)/onnxruntime-x86_64/lib/libonnxruntime.so
+$(OBJ)/.piper-aarch64-configure: $(OBJ)/onnxruntime-aarch64/lib/libonnxruntime.so
+
 $(OBJ)/.piper-x86_64-post-build:
 	mkdir -p $(PIPER_x86_64_DST)/lib/$(x86_64-unix_TARGET)
 	mv $(PIPER_x86_64_DST)/*.so* $(PIPER_x86_64_DST)/lib/$(x86_64-unix_TARGET)
