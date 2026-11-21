@@ -72,6 +72,12 @@ Also unreleased: one fix for Call of Duty: Black Ops III crashing about 20 secon
 gdi32.dll a second time and calls into that copy, whose ARM64EC dispatch pointers only the loader fills in, so the
 game jumped to address 0. A second mapping of a loaded hybrid DLL now takes those pointers from the loaded instance.
 
+Also unreleased: one FEX fix for relocated 32-bit DLLs whose code reports as read-only.
+`patches/fex/0014`: with DEP off, a DLL that misses its preferred base is fixed up by switching its sections to
+read-write and back. FEX kept those pages marked as DEP-promoted after execute access returned, so its next trap
+reprotected them as `PAGE_READONLY` and hooking libraries refused to patch them. The mark is now dropped once the
+range is executable again.
+
 11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
 `patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
 FFmpeg's H.264 parser still holds, so a video's last frame is no longer lost. Burnout Paradise Remastered waited for

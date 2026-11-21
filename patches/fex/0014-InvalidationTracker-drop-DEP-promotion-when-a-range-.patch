@@ -1,0 +1,119 @@
+From c849533928f839ba2d096c8d675f74aa62a226b3 Mon Sep 17 00:00:00 2001
+From: maxjivi05 <maxjividen@gmail.com>
+Date: Sat, 21 Nov 2026 11:20:52 -0500
+Subject: [PATCH] InvalidationTracker: drop DEP promotion when a range becomes
+ executable
+
+With DEP disabled, a readable but non-executable protection (for example
+PAGE_READWRITE while ntdll applies relocations) adds the range to
+DEPPromotedIntervals. Restoring an executable protection afterwards did
+not remove it, so the next RWX trap reprotected the range with
+GetTrapProt() as PAGE_READONLY instead of PAGE_EXECUTE_READ. Relocated
+32-bit DLL code then reported PAGE_READONLY to VirtualQuery and hooking
+libraries refused to patch it.
+
+Remove the range from DEPPromotedIntervals once it is given an
+executable protection, matching what already happens when it loses
+execute access.
+---
+ Source/Windows/Common/InvalidationTracker.cpp | 39 ++++++++++++-------
+ Source/Windows/Common/InvalidationTracker.h   |  4 +-
+ 2 files changed, 26 insertions(+), 17 deletions(-)
+
+diff --git a/Source/Windows/Common/InvalidationTracker.cpp b/Source/Windows/Common/InvalidationTracker.cpp
+index 64485c8a4..2b5c1ff65 100644
+--- a/Source/Windows/Common/InvalidationTracker.cpp
++++ b/Source/Windows/Common/InvalidationTracker.cpp
+@@ -68,6 +68,8 @@ void InvalidationTracker::HandleMemoryProtectionNotification(uint64_t Address, u
+       }
+       if (DEPDisabled && !HasExec) {
+         DEPPromotedIntervals.Insert(ProtInterval);
++      } else if (DEPDisabled) {
++        DEPPromotedIntervals.Remove(ProtInterval);
+       }
+       return true;
+     } else if (XIntervals.Intersect(ProtInterval)) {
+@@ -422,22 +424,12 @@ void InvalidationTracker::DisableSMCDetection() {
+   do {
+     Query = RWXIntervals.Query(Address);
+     if (Query.Enclosed) {
+-      void* TmpAddress = reinterpret_cast<void*>(Address);
+-      SIZE_T TmpSize = static_cast<SIZE_T>(Query.Size);
+-      ULONG TmpProt;
+-      NtProtectVirtualMemory(NtCurrentProcess(), &TmpAddress, &TmpSize, GetUntrapProt(Address), &TmpProt);
++      ProtectByDEPState(Address, Address + Query.Size, true);
+     }
+     Address += Query.Size;
+   } while (Query.Size);
+ }
+ 
+-ULONG InvalidationTracker::GetTrapProt(uint64_t Address) const {
+-  if (DEPDisabled && DEPPromotedIntervals.Query(Address).Enclosed) {
+-    return PAGE_READONLY;
+-  }
+-  return PAGE_EXECUTE_READ;
+-}
+-
+ ULONG InvalidationTracker::GetUntrapProt(uint64_t Address) const {
+   if (DEPDisabled && DEPPromotedIntervals.Query(Address).Enclosed) {
+     return PAGE_READWRITE;
+@@ -445,6 +437,26 @@ ULONG InvalidationTracker::GetUntrapProt(uint64_t Address) const {
+   return PAGE_EXECUTE_READWRITE;
+ }
+ 
++void InvalidationTracker::ProtectByDEPState(uint64_t Address, uint64_t End, bool Untrap) const {
++  while (Address < End) {
++    uint64_t ChunkEnd = End;
++    bool Promoted = false;
++    if (DEPDisabled) {
++      const auto Query = DEPPromotedIntervals.Query(Address);
++      Promoted = Query.Enclosed;
++      if (Query.Size) {
++        ChunkEnd = std::min(End, Address + Query.Size);
++      }
++    }
++    void* TmpAddress = reinterpret_cast<void*>(Address);
++    SIZE_T TmpSize = static_cast<SIZE_T>(ChunkEnd - Address);
++    ULONG TmpProt;
++    const ULONG Prot = Untrap ? (Promoted ? PAGE_READWRITE : PAGE_EXECUTE_READWRITE) : (Promoted ? PAGE_READONLY : PAGE_EXECUTE_READ);
++    NtProtectVirtualMemory(NtCurrentProcess(), &TmpAddress, &TmpSize, Prot, &TmpProt);
++    Address = ChunkEnd;
++  }
++}
++
+ void InvalidationTracker::InvalidateIntervalInternal(uint64_t Address, uint64_t Size) {
+   std::scoped_lock CodeLock(CTX.GetCodeInvalidationMutex());
+   InvalidateIntervalInternalLocked(Address, Size);
+@@ -480,10 +492,7 @@ bool InvalidationTracker::ProtectRWXIntervalsInternal(uint64_t Address, uint64_t
+         }
+         HitRWXInterval = true;
+       }
+-      void* TmpAddress = reinterpret_cast<void*>(Address);
+-      SIZE_T TmpSize = static_cast<SIZE_T>(std::min(End, Address + Query.Size) - Address);
+-      ULONG TmpProt;
+-      NtProtectVirtualMemory(NtCurrentProcess(), &TmpAddress, &TmpSize, ForWriteLocked ? GetUntrapProt(Address) : GetTrapProt(Address), &TmpProt);
++      ProtectByDEPState(Address, std::min(End, Address + Query.Size), ForWriteLocked);
+     } else if (!Query.Size) {
+       // No more regions past `Address` in the interval list
+       break;
+diff --git a/Source/Windows/Common/InvalidationTracker.h b/Source/Windows/Common/InvalidationTracker.h
+index b814fe7e0..a67e188ef 100644
+--- a/Source/Windows/Common/InvalidationTracker.h
++++ b/Source/Windows/Common/InvalidationTracker.h
+@@ -54,11 +54,11 @@ private:
+   // and any code in the range will be invalidated before protection as RWX, otherwise protects as RX if false.
+   bool ProtectRWXIntervalsInternal(uint64_t Address, uint64_t Size, bool ForWriteLocked);
+ 
+-  // Returns the correct protection for trapping (removing write) or untrapping (restoring write) an RWX interval.
++  // Returns the correct protection for untrapping (restoring write) an RWX interval.
+   // For DEP-promoted regions (originally non-exec), uses PAGE_READONLY/PAGE_READWRITE instead of PAGE_EXECUTE_READ/PAGE_EXECUTE_READWRITE.
+   // NOTE: Must be called with IntervalsLock held.
+-  ULONG GetTrapProt(uint64_t Address) const;
+   ULONG GetUntrapProt(uint64_t Address) const;
++  void ProtectByDEPState(uint64_t Address, uint64_t End, bool Untrap) const;
+ 
+   FEXCore::IntervalList<uint64_t> XIntervals;
+   FEXCore::IntervalList<uint64_t> RWXIntervals;
+-- 
+2.43.0
+
