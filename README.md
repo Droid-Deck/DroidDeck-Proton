@@ -67,6 +67,11 @@ controller-effects hooks patch its settings code to call register-preserving x86
 with plain C functions, so the game resumed with clobbered registers. The hooks are now skipped on ARM64EC; BB's
 controller-speaker routing stays off there.
 
+Also unreleased: one fix for Call of Duty: Black Ops III crashing about 20 seconds after start.
+`patches/wine-hotfixes/pending/ntdll-arm64ec-fill-hybrid-pointers-in-image-copies.patch`: the game's Arxan protection maps
+gdi32.dll a second time and calls into that copy, whose ARM64EC dispatch pointers only the loader fills in, so the
+game jumped to address 0. A second mapping of a loaded hybrid DLL now takes those pointers from the loaded instance.
+
 11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
 `patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
 FFmpeg's H.264 parser still holds, so a video's last frame is no longer lost. Burnout Paradise Remastered waited for
