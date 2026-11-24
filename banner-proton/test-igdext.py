@@ -19,7 +19,8 @@ ns = {"os": os, "errno": errno, "shutil": shutil, "stat": stat,
       "copyfile": shutil.copyfile, "log": logs.append}
 exec(compile(ast.Module(body=funcs, type_ignores=[]), "proton", "exec"), ns)
 
-INTC_STORE = "drive_c/windows/system32/DriverStore/FileRepository/igd_faux.inf_1"
+# Same path as the proton script (lower case since GE-Proton11-14, Valve 40ba6f3e).
+INTC_STORE = "drive_c/windows/system32/driverstore/filerepository/igd_faux.inf_1"
 lib_dir = os.path.join(tool, "files/lib/")
 shipped = sorted(os.listdir(os.path.join(lib_dir, "wine/igdext")))
 print("files/lib/wine/igdext:", shipped)

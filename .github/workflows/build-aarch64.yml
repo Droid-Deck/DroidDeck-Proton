@@ -95,7 +95,7 @@ jobs:
     with:
       group: graphics
       keys: ${{ needs.meta.outputs.keys }}
-      goals: glslang dxvk d7vk dxvk-nvapi dxvk-igdext vkd3d-proton dxvk-nvapi-vkreflex-layer pyroveil low_latency_layer vkbasalt
+      goals: glslang dxvk d7vk dxvk-nvapi dxvk-igdext vkd3d-proton dxvk-nvapi-vkreflex-layer pyroveil low_latency_layer vkbasalt hdr-colorspace
       build_name: ${{ needs.meta.outputs.build_name }}
       display_name: ${{ needs.meta.outputs.display_name }}
 
@@ -131,8 +131,8 @@ jobs:
       group: media
       keys: ${{ needs.meta.outputs.keys }}
       goals: >-
-        dav1d bzip2 xz ffmpeg libxml2 libxkbcommon libpcap libsoup graphene wayland-protocols pipewire-alsa
-        openxr openfst kaldi vosk piper steam-overlay-wayland
+        dav1d bzip2 xz ffmpeg libxml2 libxkbcommon libpcap libsoup sbc graphene wayland-protocols pipewire-alsa
+        openxr openfst kaldi vosk piper-phonemize piper steam-overlay-wayland
       # wine builds against the media libraries, so keep their install trees (dst-*).
       pack_exclude: '^(obj-[^/]*|src-[^/]*|compile_commands|make[^/]*\.log|bp-[^/]*)(/|$)'
       build_name: ${{ needs.meta.outputs.build_name }}

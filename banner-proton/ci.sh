@@ -36,11 +36,11 @@ keys() {
     graphics=$(key meson glslang Vulkan-Headers SPIRV-Headers dxvk d7vk dxvk-nvapi dxvk-igdext vkd3d-proton vklayers)
     fex=$(key FEX FEX_Config.json)
     media=$(key meson dav1d libsoup libxml2 libxkbcommon wayland-protocols libpcap graphene xz bzip2 pipewire \
-        ffmpeg OpenXR-SDK piper openfst kaldi vosk-api vklayers/build-steam-overlay-wayland.mk)
+        ffmpeg OpenXR-SDK piper piper-phonemize sbc openfst kaldi vosk-api vklayers/build-steam-overlay-wayland.mk)
     misc=$(key fonts protonfixes)
     # wine links against the media group, so its key includes the media key.
     wine=$( { echo "$media"; key wine Vulkan-Headers SPIRV-Headers vkd3d lsteamclient steam_helper vrclient_x64 \
-        umu_helper openvr discord-rpc-bridge; } | sha256sum | cut -c1-20)
+        umu_helper openvr discord-rpc-bridge soundfonts; } | sha256sum | cut -c1-20)
     printf '{"graphics":"grp-graphics-%s","fex":"grp-fex-%s","media":"grp-media-%s","misc":"grp-misc-%s","wine":"grp-wine-%s"}\n' \
         "$graphics" "$fex" "$media" "$misc" "$wine"
 }
