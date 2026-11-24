@@ -22,37 +22,47 @@ them can be bisected or turned off on its own.
 
 | Tier | Contents | Tag |
 |---|---|---|
-| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.12-tier1` |
-| 2 | Everything GE-Proton11-12 applies to Wine | `bp-11.12-tier2` |
-| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.12-tier3` |
-| 4 | Our portable fixes from the Bannerlator layers | `bp-11.12-tier4` |
-| 5 | DroidDeck esync, built in | `bp-11.12-tier5` |
-| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.12-tier6` |
-| 7 | .NET mod loaders on ARM64 (upstream Wine fix, since 11-11.2) | `bp-11.12-tier7` |
+| 1 | Valve Proton Wine, `bleeding-edge` | `bp-11.14-tier1` |
+| 2 | Everything GE-Proton11-14 applies to Wine | `bp-11.14-tier2` |
+| 3 | CachyOS game fixes GE doesn't already carry | `bp-11.14-tier3` |
+| 4 | Our portable fixes from the Bannerlator layers | `bp-11.14-tier4` |
+| 5 | DroidDeck esync, built in | `bp-11.14-tier5` |
+| 6 | SD card fixes (games on `noexec` storage, drive-root copies) | `bp-11.14-tier6` |
+| 7 | .NET mod loaders on ARM64 (upstream Wine fix, since 11-11.2) | `bp-11.14-tier7` |
 
 Up to 11-10.1 tier 7 was the DirectShow FMV row order fix. GE-Proton11-11 carries the same fix
 (`ge-video-rework/0096`), so it is part of tier 2 now, and tier 7 is a new fix since 11-11.2.
 
 Wine source: [`The412Banner/proton-wine`](https://github.com/The412Banner/proton-wine), branch
-`banner-proton/11.12` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
+`banner-proton/11.14` (the `wine` submodule). Versions and pins: `banner-proton/VERSION` and `banner-proton/PINS`.
 
 _Formerly Banner-Proton; releases up to 11-7.2 used the old name._
 
 <details>
-<summary><b>Pins (11-12.8)</b></summary>
+<summary><b>Pins (11-14.1)</b></summary>
 
 | Component | Commit |
 |---|---|
-| GE-Proton (`proton-ge-custom` tag `GE-Proton11-12`) | `f85547f0ea51ac356ab42b4de57b927b0044cc85` |
-| DXVK (same as GE: v3.1.1-174) | `f863776806824486d709fee16ea619c03e22def4` |
-| Valve Wine `bleeding-edge` (same as GE, 2026-10-31 + later commits) | `fda79a585939fb7512dc220a11249f9ffe825fcf` |
-| FEX (same as GE: `FEX-2610-116`, plus `patches/fex`) | `02e24ca5c01ed0c864466ed573db347336f70170` |
+| GE-Proton (`proton-ge-custom` tag `GE-Proton11-14`) | `777d72b4ae50b3121ac46df2a7605bb2d6156840` |
+| DXVK (same as GE: v3.1.1-235) | `f90f1bf180f41356695ddf3df6af62119fb64a3e` |
+| Valve Wine `bleeding-edge` (same as GE, 2026-11-21) | `a47c73f52fd7b2efafc1c560710f3a5099ae51e0` |
+| FEX (same as GE: `FEX-2611-68`, plus `patches/fex`) | `490bb02f6e6b7b50f17049e5bb254bd5a6a2b779` |
 | CachyOS Wine `cachyos_11.0_20261014/main` (release `cachyos-11.0-20261015-slr`) | `cd14106e4fc0f96006005b07985e49cc1517e9c0` |
 | CachyOS Wine `cachyos_11.0_20261014/dev` (unreleased; two HID commits in tier 3) | `c3808057d6` |
-| DroidDeck-Proton Wine `banner-proton/11.12` (+ the winex11 offscreen-check cache) | `303894db765bad9936de9a532cb833dada939d58` |
+| DroidDeck-Proton Wine `banner-proton/11.14` (+ the winex11 offscreen-check cache) | `23ea0b02ace10ef0fe19e34d3ade6c421dce4ff8` |
 
-vkd3d-proton (v3.1), vkd3d, d7vk, dxvk-nvapi (v0.9.3), dxvk-igdext, lsteamclient, wineopenxr and protonfixes are
-GE-Proton11-12's pins.
+vkd3d-proton (v3.1-83), vkd3d, d7vk (v2.5), dxvk-nvapi (v0.9.3-10), dxvk-igdext, lsteamclient, wineopenxr, protonfixes,
+sbc and piper-phonemize are GE-Proton11-14's pins.
+
+11-14.1 moves to GE-Proton11-14 (GE-Proton11-13 and its hotfix) and carries every fix of 11-12.8 and the ones
+merged after it (below). Tiers 3–7 and the offscreen-check cache are cherry-picked onto `banner-proton/11.14`
+unchanged (`git range-diff` identical), the deferred Wine patches apply at build time as before, and the FEX
+patches are rebased onto FEX-2611-68. Changes to our own patches: `ntdll-arm64ec-get-context-null.patch` is re-placed
+on Valve's new ARM64EC `NtGetContextThread` (XState support); `patches/fex/0001` drops its fetch-fault address half,
+which FEX does itself now (partial instruction fault decoding, FEX `b65c96b7` and `511f5835`); `patches/fex/0005` and
+`0013` are re-placed on the new FEX code; the NuGet onnxruntime workaround for piper (#37) is gone because
+GE-Proton11-14 builds piper-phonemize itself. Not taken from GE-Proton11-14 for now: d8vk and D7VK as the default for
+D3D8 and 32-bit ddraw games; `PROTON_DXVK_D3D8=1` and `PROTON_USE_D7VK=1` turn them on, as in 11-12.
 
 11-12.1 moves to GE-Proton11-12 and carries every fix of 11-11.11 below: tiers 3–7 and the offscreen-check cache are
 cherry-picked onto `banner-proton/11.12` unchanged except the esync tier (ported, see tier 5), and the deferred
@@ -61,22 +71,29 @@ stale-alert fix. The three GE master fixes 11-11.1 took early are GE's own now. 
 two CachyOS HID fixes (tier 3) and K11MCH1's FEX load fixes (`patches/fex/0013` and the rpmalloc patch, PR #9: translated
 code kept on empty reads, one 128 MB code buffer, fewer waits on Wine's memory lock).
 
-Unreleased: one fix for Death Stranding Director's Cut crashing when a graphics setting is applied.
+Also new in 11-14.1 (merged after 11-12.8): one fix for Death Stranding Director's Cut crashing when a graphics setting is applied.
 `patches/wine-hotfixes/pending/mmdevapi-skip-death-stranding-code-hooks-on-arm64ec.patch`: the game's
 controller-effects hooks patch its settings code to call register-preserving x86-64 thunks, which ARM64EC builds replace
 with plain C functions, so the game resumed with clobbered registers. The hooks are now skipped on ARM64EC; BB's
 controller-speaker routing stays off there.
 
-Also unreleased: one fix for Call of Duty: Black Ops III crashing about 20 seconds after start.
+Also new in 11-14.1: one fix for Call of Duty: Black Ops III crashing about 20 seconds after start.
 `patches/wine-hotfixes/pending/ntdll-arm64ec-fill-hybrid-pointers-in-image-copies.patch`: the game's Arxan protection maps
 gdi32.dll a second time and calls into that copy, whose ARM64EC dispatch pointers only the loader fills in, so the
 game jumped to address 0. A second mapping of a loaded hybrid DLL now takes those pointers from the loaded instance.
 
-Also unreleased: one FEX fix for relocated 32-bit DLLs whose code reports as read-only.
+Also new in 11-14.1: one FEX fix for relocated 32-bit DLLs whose code reports as read-only.
 `patches/fex/0014`: with DEP off, a DLL that misses its preferred base is fixed up by switching its sections to
 read-write and back. FEX kept those pages marked as DEP-promoted after execute access returned, so its next trap
 reprotected them as `PAGE_READONLY` and hooking libraries refused to patch them. The mark is now dropped once the
 range is executable again.
+
+Also new in 11-14.1: two ntdll fixes. `patches/wine-hotfixes/pending/ntdll-arm64ec-get-context-null.patch`:
+the ARM64EC `NtGetContextThread` returns `STATUS_ACCESS_VIOLATION` for a NULL context, as Windows does, instead of
+faulting in ntdll (Crash Bandicoot N. Sane Trilogy stopped at its title screen, PR #24).
+`patches/wine-hotfixes/pending/ntdll-futex-entry-pool.patch`: `RtlWaitOnAddress()` takes its queue entry from a static
+pool instead of the waiter's stack, so a thread killed during a wait no longer leaves a freed entry that hangs every
+later wait on that queue (Forza Horizon 6 loading screen, PR #30).
 
 11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
 `patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
@@ -144,14 +161,30 @@ they were built for, as on Valve's Proton. A loader that starts a 32-bit game su
 <details>
 <summary><b>Tier 2 – GE-Proton</b></summary>
 
-All of GE-Proton's Wine patching at `GE-Proton11-12` (`f85547f0`), applied by GE's own `protonprep`
+All of GE-Proton's Wine patching at `GE-Proton11-14` (`777d72b4`), applied by GE's own `protonprep`
 Wine section on tier 1, one commit per section: configure revert, EM-11 wine-wayland + wineopenxr + EM fixups,
 wine-staging (with GE's exclusions and rebased sets), game patches, hotfixes, pending upstream patches
 and GE's custom patches (FSR, Reflex, OptiScaler, video rework, DS5 haptics, Bluetooth LE, …). Everything
 applied cleanly. The `Verify wine tier 2` workflow re-runs GE's section on tier 1 and checks the result
 matches tier 2 plus its follow-ups.
 
-New in GE-Proton11-12:
+New in GE-Proton11-13 and its hotfix GE-Proton11-14:
+- Valve Wine bleeding-edge 2026-11-21: ARM64EC and WoW64 x86 AVX state (XState) support, the reply pipe closed
+  before the first server request (WineHQ 60663), an fsync alert fd fix, `NtUserPrintWindow` without WM_PRINT,
+  time zone updates, Vulkan 1.4.363
+- threads: a killed thread is no longer queued for freeing twice, and a stale fd no longer turns a new thread's
+  request into `STATUS_INVALID_CID`
+- controllers: Bluetooth DualSense and DualShock 4 shown to games as USB, Sony pads kept on SDL with hidraw off,
+  FlatOut 2 XInput loader-lock hang, Le Mans Ultimate wheels
+- video: about 25 playback fixes (HEVC decoder, Windows Media Player for WPF, EVR, qasf, RGB565/555 output)
+- audio: opt-in `winepipewire.drv` (`PROTON_USE_PIPEWIRE=1`, from CachyOS), a built-in MIDI synth with the
+  GeneralUser GS soundfont
+- windowing: Wayland cross-process swapchain fixes, xdg-decoration v1, `PROTON_NO_XIM` works again, fewer server
+  requests from `GetCursorPos` (`em-fixups/0076`), the native HDR colorspace is opt-in (`WINE_WAYLAND_HDR_NATIVE=1`)
+- games: Witcher 3 stutter, Battlefield 4 PunkBuster stall, Stronghold Crusader HD, RuneScape black screen (11-14),
+  Inno Setup (GOG) installers with full x87 precision on aarch64
+
+Earlier, in GE-Proton11-12:
 - Valve Wine bleeding-edge 2026-10-31 and later: XInput rescans controllers only when a device could have
   changed (replaces the Far Cry 4 and Witcher 3 hacks), thread pool worker timeout 60 s, Voice Capture DSP
   (`mfwmaaec`) audio capture, HID input reports cut to their declared length
@@ -181,9 +214,10 @@ controller XInput fallback no longer rescanning HID devices on every poll, Bluet
 rumble through the fallback, KWin per-monitor HDR state and owned-popup destruction fixes
 (`em-fixups/0071`, `0072`), MonoGame song replay fix (`ge-video-rework/0093`, `0094`).
 
-GE's non-Wine changes arrive through the merge of `GE-Proton11-12`: DXVK v3.1.1-174 (command submission
-throttling and memory eviction rework, present timing fixes), the D7VK DirectDraw/D3D7 rework, VKD3D-Proton 3.1,
-DXVK-NVAPI 0.9.3, FEX-2610-116, and the `proton` script's controller defaults.
+GE's non-Wine changes arrive through the merge of `GE-Proton11-14`: DXVK v3.1.1-235, VKD3D-Proton v3.1-83,
+vkd3d 2.1-271, DXVK-NVAPI 0.9.3-10, D7VK 2.5, FEX-2611-68, OpenXR SDK 1.1.63, Xalia 0.5.1, the new sbc and
+piper-phonemize components, lsteamclient networking signaling, and Ubisoft Connect closing after the game. Earlier,
+with GE-Proton11-12: DXVK v3.1.1-174, the D7VK DirectDraw/D3D7 rework, VKD3D-Proton 3.1, DXVK-NVAPI 0.9.3, FEX-2610-116.
 
 </details>
 
