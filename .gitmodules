@@ -137,3 +137,9 @@
 [submodule "dxvk-igdext"]
 	path = dxvk-igdext
 	url = https://github.com/GameTechDev/dxvk-igdext
+[submodule "sbc"]
+	path = sbc
+	url = https://git.kernel.org/pub/scm/bluetooth/sbc.git
+[submodule "piper-phonemize"]
+	path = piper-phonemize
+	url = https://github.com/shaunren/piper-phonemize
