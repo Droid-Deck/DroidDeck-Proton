@@ -1,7 +1,7 @@
-From 383abb7f165054bec283b1f2c5043694164a2fcd Mon Sep 17 00:00:00 2001
+From a475664f6cd11449f96f444da647f5757a59d9e3 Mon Sep 17 00:00:00 2001
 From: Dmage22 <danny.sui.lee@gmail.com>
 Date: Wed, 23 Sep 2026 12:19:30 -0700
-Subject: [PATCH 07/12] ARM64EC: carry PF/AF through exception and syscall
+Subject: [PATCH 07/14] ARM64EC: carry PF/AF through exception and syscall
  contexts
 
 Pack PF/AF into the RES0 cpsr bits 26/27 of the packed EC context, and on
@@ -11,16 +11,15 @@ Previously PF after an exception came from whatever the handler left in
 the JIT state, so Overwatch_loader.dll's jp after a decrypt-on-demand
 fault took the wrong path. Stock ntdll keeps the old behaviour.
 Bump wcp to d2rfix11.
-
 ---
  Source/Windows/ARM64EC/Module.cpp | 20 +++++++++++++++-----
  1 file changed, 15 insertions(+), 5 deletions(-)
 
 diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
-index 60f3744b2..8f6eef906 100644
+index 8e5dbbf8c..bfff833ba 100644
 --- a/Source/Windows/ARM64EC/Module.cpp
 +++ b/Source/Windows/ARM64EC/Module.cpp
-@@ -147,6 +147,7 @@ fextl::unique_ptr<FEX::DummyHandlers::DummySignalDelegator> SignalDelegator;
+@@ -150,6 +150,7 @@ fextl::unique_ptr<FEX::DummyHandlers::DummySignalDelegator> SignalDelegator;
  fextl::unique_ptr<Exception::ECSyscallHandler> SyscallHandler;
  fextl::unique_ptr<FEX::Windows::StatAlloc> StatAllocHandler;
  std::optional<FEX::Windows::InvalidationTracker> InvalidationTracker;
@@ -28,7 +27,7 @@ index 60f3744b2..8f6eef906 100644
  std::optional<FEX::Windows::CPUFeatures> CPUFeatures;
  std::optional<FEX::Windows::OvercommitTracker> OvercommitTracker;
  std::optional<FEX::Windows::ImageTracker> ImageTracker;
-@@ -549,8 +550,10 @@ static ARM64_NT_CONTEXT StoreStateToPackedECContext(FEXCore::Core::InternalThrea
+@@ -618,8 +619,10 @@ static ARM64_NT_CONTEXT StoreStateToPackedECContext(FEXCore::Core::InternalThrea
    ECContext.X24 = 0;
    ECContext.X28 = 0;
  
@@ -41,7 +40,7 @@ index 60f3744b2..8f6eef906 100644
    uint32_t EFlags = CTX->ReconstructCompactedEFLAGS(Thread, false, nullptr, 0);
    ECContext.Cpsr = 0;
    ECContext.Cpsr |= (EFlags & (1U << FEXCore::X86State::RFLAG_TF_RAW_LOC)) ? (1U << 21) : 0;
-@@ -558,6 +561,8 @@ static ARM64_NT_CONTEXT StoreStateToPackedECContext(FEXCore::Core::InternalThrea
+@@ -627,6 +630,8 @@ static ARM64_NT_CONTEXT StoreStateToPackedECContext(FEXCore::Core::InternalThrea
    ECContext.Cpsr |= (EFlags & (1U << FEXCore::X86State::RFLAG_CF_RAW_LOC)) ? (1U << 29) : 0;
    ECContext.Cpsr |= (EFlags & (1U << FEXCore::X86State::RFLAG_ZF_RAW_LOC)) ? (1U << 30) : 0;
    ECContext.Cpsr |= (EFlags & (1U << FEXCore::X86State::RFLAG_SF_RAW_LOC)) ? (1U << 31) : 0;
@@ -50,7 +49,7 @@ index 60f3744b2..8f6eef906 100644
  
    ECContext.Fpcr = FPCR;
    ECContext.Fpsr = FPSR;
-@@ -748,9 +753,13 @@ extern "C" void SyncThreadContext(CONTEXT* Context) {
+@@ -835,9 +840,13 @@ extern "C" void SyncThreadContext(CONTEXT* Context) {
    auto* Thread = GetCPUArea().ThreadState();
    // All other EFlags bits are lost when converting to/from an ARM64EC context, so merge them in from the current JIT state.
    // This is advisable over dropping their values as thread suspend/resume uses this function, and that can happen at any point in guest code.
@@ -67,7 +66,7 @@ index 60f3744b2..8f6eef906 100644
  
    uint32_t StateEFlags = CTX->ReconstructCompactedEFLAGS(Thread, false, nullptr, 0);
    Context->EFlags = (Context->EFlags & ECValidEFlagsMask) | (StateEFlags & ~ECValidEFlagsMask);
-@@ -781,6 +790,7 @@ NTSTATUS ProcessInit() {
+@@ -868,6 +877,7 @@ NTSTATUS ProcessInit() {
  
    const auto NtDll = GetModuleHandleW(L"ntdll.dll");
    const bool IsWine = !!GetProcAddress(NtDll, "wine_get_version");
@@ -76,5 +75,5 @@ index 60f3744b2..8f6eef906 100644
  
    FEX::Windows::SetupEnvironmentVariableValues(NtDll);
 -- 
-2.43.0
+2.53.0
 

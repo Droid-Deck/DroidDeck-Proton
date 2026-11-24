@@ -1,7 +1,7 @@
-From 23e2c9004771a1eece0e190241fd0279a2db6279 Mon Sep 17 00:00:00 2001
+From 59c05e6553e0ccc51b9c27385f4e227623388283 Mon Sep 17 00:00:00 2001
 From: Utkarsh Dalal <dalal.utkarsh@gmail.com>
 Date: Sun, 11 Oct 2026 15:37:10 +0530
-Subject: [PATCH 12/12] ARM64EC: export BTCpu64NotifyNonImageViews so ntdll can
+Subject: [PATCH 12/14] ARM64EC: export BTCpu64NotifyNonImageViews so ntdll can
  gate non-image view notifications
 
 ntdll forwards views of non-image sections only when the emulator exports this
@@ -26,10 +26,10 @@ index d57603079..67f351139 100644
  void STDMETHODCALLTYPE FlushInstructionCacheHeavy(const void* Address, SIZE_T Size);
  void STDMETHODCALLTYPE BTCpu64FlushInstructionCache(const void* Address, SIZE_T Size);
 diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
-index 0e68b5e69..27319814f 100644
+index 57c6cf7c8..9bf3b557e 100644
 --- a/Source/Windows/ARM64EC/Module.cpp
 +++ b/Source/Windows/ARM64EC/Module.cpp
-@@ -1089,6 +1089,10 @@ void NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After,
+@@ -1303,6 +1303,10 @@ void NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After,
    }
  }
  
@@ -53,5 +53,5 @@ index bb51ca889..797c6f4a8 100644
    NotifyMemoryFree
    NotifyMemoryProtect
 -- 
-2.43.0
+2.53.0
 

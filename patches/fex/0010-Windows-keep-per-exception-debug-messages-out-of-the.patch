@@ -1,7 +1,7 @@
-From 4aa2432ac01ae56b9100eaa8c67ca8513d927f97 Mon Sep 17 00:00:00 2001
+From 22b333a21722c173358b1a36e6320e5a6edd2de5 Mon Sep 17 00:00:00 2001
 From: Dmage22 <danny.sui.lee@gmail.com>
 Date: Wed, 7 Oct 2026 21:34:49 +0000
-Subject: [PATCH 10/12] Windows: keep per-exception debug messages out of the
+Subject: [PATCH 10/14] Windows: keep per-exception debug messages out of the
  log unless FEX_DEBUGLOG=1
 
 LogMan's DEBUG level sits below INFO, so every build prints the DFmt
@@ -11,7 +11,6 @@ loop for the whole session; a single run produced 1.7 million such lines
 (69 MB) and three lines that mattered. Make the debug level opt-in on
 the Windows frontend; info and error lines, including [xrange] and
 [compilefault], are unchanged.
-
 ---
  Source/Windows/Common/Logging.cpp | 10 ++++++++++
  1 file changed, 10 insertions(+)
@@ -47,5 +46,5 @@ index 21fbdfd1f..b2e5d28d8 100644
    if (!WineDbgOut) {
      const auto Path = fextl::fmt::format("{}\\fex-{}.log", getenv("LOCALAPPDATA"), GetCurrentProcessId());
 -- 
-2.43.0
+2.53.0
 

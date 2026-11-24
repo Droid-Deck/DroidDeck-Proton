@@ -1,7 +1,7 @@
-From 91e9750a848ef8f09c22d7560c67496af3b3c6f1 Mon Sep 17 00:00:00 2001
+From 673e592ad1e49bb2ee8925d5f7dd97f44e513a85 Mon Sep 17 00:00:00 2001
 From: Dmage22 <danny.sui.lee@gmail.com>
 Date: Wed, 23 Sep 2026 11:34:28 -0700
-Subject: [PATCH 06/12] ARM64EC: retry stale NoExec faults instead of raising
+Subject: [PATCH 06/14] ARM64EC: retry stale NoExec faults instead of raising
  them
 
 A NoExec stub compiled for a block entry that another thread makes executable
@@ -24,10 +24,10 @@ check runs there too and the guest continues from its packed context.
  1 file changed, 74 insertions(+)
 
 diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
-index 2dfcab1df..60f3744b2 100644
+index 07c70b91d..8e5dbbf8c 100644
 --- a/Source/Windows/ARM64EC/Module.cpp
 +++ b/Source/Windows/ARM64EC/Module.cpp
-@@ -598,6 +598,71 @@ static void RethrowGuestException(FEXCore::Core::InternalThreadState* Thread, co
+@@ -678,6 +678,71 @@ static void RethrowGuestException(FEXCore::Core::InternalThreadState* Thread, co
    RaiseException(Thread, Rec, GuestContext);
  }
  
@@ -99,7 +99,7 @@ index 2dfcab1df..60f3744b2 100644
  [[noreturn]]
  static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore::Core::CpuStateFrame* Frame) {
    // Coming in to this function, the guest state is synchronized and the host thread is in a safe location.
-@@ -609,6 +674,11 @@ static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore:
+@@ -689,6 +754,11 @@ static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore:
    __asm volatile("mrs %[fpsr], fpsr" : [fpsr] "=r"(FPSR));
  
    auto Context = StoreStateToPackedECContext(Thread, static_cast<uint32_t>(FPCR), static_cast<uint32_t>(FPSR));
@@ -109,9 +109,9 @@ index 2dfcab1df..60f3744b2 100644
 +  }
 +
    EXCEPTION_RECORD Record = {};
+ 
    switch (Fault.Signal) {
-   case FEXCore::Core::FAULT_SIGILL: Record.ExceptionCode = EXCEPTION_ILLEGAL_INSTRUCTION; break;
-@@ -853,6 +923,10 @@ bool ResetToConsistentStateImpl(const ThreadCPUArea CPUArea, EXCEPTION_RECORD* E
+@@ -996,6 +1066,10 @@ bool ResetToConsistentStateImpl(const ThreadCPUArea CPUArea, EXCEPTION_RECORD* E
      return true;
    }
  
@@ -123,5 +123,5 @@ index 2dfcab1df..60f3744b2 100644
      Exception::RethrowGuestException(Thread, *Exception, *NativeContext);
      LogMan::Msg::DFmt("Rethrowing onto guest stack: {:X}", NativeContext->Sp);
 -- 
-2.43.0
+2.53.0
 

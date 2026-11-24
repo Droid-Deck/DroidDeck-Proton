@@ -1,7 +1,7 @@
-From d3a64ee916af69e595ec50372667e60b668ebd21 Mon Sep 17 00:00:00 2001
+From 4b9fecd819fa4cf2b801df63968cd56c6953a2cc Mon Sep 17 00:00:00 2001
 From: Dmage22 <danny.sui.lee@gmail.com>
 Date: Mon, 21 Sep 2026 09:00:20 -0700
-Subject: [PATCH 05/12] Windows: set EXCEPTION_ACCESS_VIOLATION explicitly for
+Subject: [PATCH 05/14] Windows: set EXCEPTION_ACCESS_VIOLATION explicitly for
  guest page faults
 
 Every other case in HandleGuestException sets Dst.ExceptionCode; the
@@ -17,24 +17,26 @@ parameters:
 Blizzard's Eidolon protector expects an access violation on its PAGE_NOACCESS
 decrypt-on-demand page; an illegal instruction there makes it report a crash.
 
+Rebased onto FEX-2611-68 (490bb02f) for DroidDeck-Proton 11-14.1; FEX still leaves the
+exception code unset in this case.
 ---
  Source/Windows/Common/Exception.h | 3 +++
  1 file changed, 3 insertions(+)
 
 diff --git a/Source/Windows/Common/Exception.h b/Source/Windows/Common/Exception.h
-index 97124acf6..6b8528967 100644
+index b41a5e64a..809209817 100644
 --- a/Source/Windows/Common/Exception.h
 +++ b/Source/Windows/Common/Exception.h
-@@ -94,6 +94,9 @@ static inline EXCEPTION_RECORD HandleGuestException(FEXCore::Core::CpuStateFrame
-         FaultAddress = RipPage + FEXCore::Utils::FEX_PAGE_SIZE;
-       }
- 
+@@ -76,6 +76,9 @@ static inline EXCEPTION_RECORD HandleGuestException(FEXCore::Core::CpuStateFrame
+     case FEXCore::X86State::X86_TRAPNO_OF: Dst.ExceptionCode = EXCEPTION_INT_OVERFLOW; return Dst;
+     case FEXCore::X86State::X86_TRAPNO_PF:
+       // A page-fault raised by an explicit break in JIT code is always an execute fault
 +      // Set the code explicitly like every other case: the host trap that got us here is not necessarily an
 +      // access violation (on Windows the SIGSEGV trampoline raises it with hlt).
 +      Dst.ExceptionCode = EXCEPTION_ACCESS_VIOLATION;
        Dst.NumberParameters = 2;
        Dst.ExceptionInformation[0] = EXCEPTION_EXECUTE_FAULT;
-       Dst.ExceptionInformation[1] = FaultAddress;
+       Dst.ExceptionInformation[1] = Fault.FaultAddress ? Fault.FaultAddress : Rip;
 -- 
-2.43.0
+2.53.0
 

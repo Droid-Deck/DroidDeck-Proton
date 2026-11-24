@@ -1,7 +1,7 @@
-From ba36fc7d9f4b2f47a3dbaee1a9654bf49becf271 Mon Sep 17 00:00:00 2001
+From 9eb884561bc35407ab994a6400dd9716a625bcbb Mon Sep 17 00:00:00 2001
 From: Dmage22 <danny.sui.lee@gmail.com>
 Date: Sun, 20 Sep 2026 03:06:08 -0700
-Subject: [PATCH 01/12] Windows: track executable non-image section views,
+Subject: [PATCH 01/14] Windows: track executable non-image section views,
  report real fetch-fault address
 
 Two fixes needed to run Blizzard's Arxan-wrapped loaders (D2R_loader.dll,
@@ -28,16 +28,19 @@ resumes, and faults identically. An x86 instruction is at most 15 bytes, so it
 can cross only one page boundary - if the instruction's own page is executable,
 the fault came from the following one.
 
+Rebased onto FEX-2611-68 (490bb02f) for DroidDeck-Proton 11-14.1: the Exception.h part
+(report the first byte that could not be fetched) is dropped, FEX does this itself now
+(b65c96b7 "FEXCore: Support partial instruction fault decoding", 511f5835 "Frontends:
+Pass the partial fault to the guest").
 ---
  Source/Windows/ARM64EC/Module.cpp | 27 +++++++++++++++++++++++++--
- Source/Windows/Common/Exception.h | 25 ++++++++++++++++++++++---
- 2 files changed, 47 insertions(+), 5 deletions(-)
+ 1 file changed, 25 insertions(+), 2 deletions(-)
 
 diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
-index 80752f1b8..79b2a7cab 100644
+index 6bf89bb6e..ff6e5561b 100644
 --- a/Source/Windows/ARM64EC/Module.cpp
 +++ b/Source/Windows/ARM64EC/Module.cpp
-@@ -347,11 +347,23 @@ bool InitSyscalls() {
+@@ -350,11 +350,23 @@ bool InitSyscalls() {
    return true;
  }
  
@@ -62,7 +65,7 @@ index 80752f1b8..79b2a7cab 100644
  }
  
  void HandleImageUnmap(uint64_t Address, uint64_t Size) {
-@@ -928,7 +940,18 @@ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Si
+@@ -1142,7 +1154,18 @@ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Si
  
    {
      std::scoped_lock Lock(ThreadCreationMutex);
@@ -82,52 +85,6 @@ index 80752f1b8..79b2a7cab 100644
    }
  
  
-diff --git a/Source/Windows/Common/Exception.h b/Source/Windows/Common/Exception.h
-index 12162233c..97124acf6 100644
---- a/Source/Windows/Common/Exception.h
-+++ b/Source/Windows/Common/Exception.h
-@@ -6,6 +6,7 @@
- #include <winternl.h>
- 
- #include <FEXCore/Utils/LogManager.h>
-+#include <FEXCore/Utils/TypeDefines.h>
- #include <FEXCore/Debug/InternalThreadState.h>
- 
- namespace FEX::Windows {
-@@ -74,12 +75,30 @@ static inline EXCEPTION_RECORD HandleGuestException(FEXCore::Core::CpuStateFrame
-       }
-       break;
-     case FEXCore::X86State::X86_TRAPNO_OF: Dst.ExceptionCode = EXCEPTION_INT_OVERFLOW; return Dst;
--    case FEXCore::X86State::X86_TRAPNO_PF:
--      // A page-fault raised by an explicit break in JIT code is always an execute fault
-+    case FEXCore::X86State::X86_TRAPNO_PF: {
-+      // A page-fault raised by an explicit break in JIT code is always an execute fault.
-+      //
-+      // The reported address has to be the first byte that could not be fetched, which is not always
-+      // the start of the instruction: an instruction sitting at the tail of an executable page and
-+      // running into the next one faults on that next page. Reporting the instruction start instead
-+      // makes decrypt-on-demand protectors spin forever - their handler looks at
-+      // ExceptionInformation[1], sees a page it has already unlocked, decides there is nothing to do,
-+      // resumes, and faults identically. An x86 instruction is at most 15 bytes, so it can only ever
-+      // cross a single page boundary.
-+      uint64_t FaultAddress = Rip;
-+      const uint64_t RipPage = Rip & FEXCore::Utils::FEX_PAGE_MASK;
-+      constexpr ULONG ExecProt = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
-+      MEMORY_BASIC_INFORMATION Info;
-+      if (VirtualQuery(reinterpret_cast<LPCVOID>(RipPage), &Info, sizeof(Info)) && Info.State == MEM_COMMIT &&
-+          (Info.Protect & ExecProt)) {
-+        FaultAddress = RipPage + FEXCore::Utils::FEX_PAGE_SIZE;
-+      }
-+
-       Dst.NumberParameters = 2;
-       Dst.ExceptionInformation[0] = EXCEPTION_EXECUTE_FAULT;
--      Dst.ExceptionInformation[1] = Rip;
-+      Dst.ExceptionInformation[1] = FaultAddress;
-       return Dst;
-+    }
-     default: LogMan::Msg::EFmt("Unknown SIGSEGV trap: {}", Fault.TrapNo); break;
-     }
-     break;
 -- 
-2.43.0
+2.53.0
 

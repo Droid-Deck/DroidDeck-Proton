@@ -1,7 +1,7 @@
-From f8e1358b6a9e1868295ed408ff7ddaad3401a585 Mon Sep 17 00:00:00 2001
+From df68038b17570810729696c09d21c20fd3b23f55 Mon Sep 17 00:00:00 2001
 From: Dmage22 <danny.sui.lee@gmail.com>
 Date: Sun, 20 Sep 2026 22:10:14 -0700
-Subject: [PATCH 03/12] InvalidationTracker: ask the OS when an address has no
+Subject: [PATCH 03/14] InvalidationTracker: ask the OS when an address has no
  executable interval
 
 Port of aanze's QueryExecutableRange fallback from FEX-Emu/FEX#5328. On a
@@ -31,7 +31,6 @@ would take the code invalidation mutex while a block is being compiled; a
 range that was never in XIntervals has no compiled code to invalidate.
 
 Bump the package version so it installs alongside 2609-d2rfix2.
-
 ---
  Source/Windows/Common/InvalidationTracker.cpp | 80 ++++++++++++++++---
  1 file changed, 71 insertions(+), 9 deletions(-)
@@ -131,5 +130,5 @@ index 155403d35..f093e3c0f 100644
  
  void InvalidationTracker::DetectMonoBackpatcherBlock(FEXCore::Core::InternalThreadState* Thread, uint64_t HostPc) {
 -- 
-2.43.0
+2.53.0
 

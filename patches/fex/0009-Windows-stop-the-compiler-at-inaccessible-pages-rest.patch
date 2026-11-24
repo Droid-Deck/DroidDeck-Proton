@@ -1,7 +1,7 @@
-From 25d7fd0da4462ca9d03ac20537b29feb5841862d Mon Sep 17 00:00:00 2001
+From 4ee4eb7aa94fd690fd1065f721f889ca0f54dbfe Mon Sep 17 00:00:00 2001
 From: Dmage22 <danny.sui.lee@gmail.com>
 Date: Wed, 7 Oct 2026 20:19:53 +0000
-Subject: [PATCH 09/12] Windows: stop the compiler at inaccessible pages,
+Subject: [PATCH 09/14] Windows: stop the compiler at inaccessible pages,
  restart it instead of dispatching its faults
 
 D2R under mtrack freezes with every game thread idle and the GPU at 0%.
@@ -45,7 +45,6 @@ Two changes:
 
 Both paths log, rate limited, as [xrange] and [compilefault] with
 FEX_SILENTLOG=0. Built as 2610-d2rfix27.
-
 ---
  FEXCore/Source/Interface/Core/Core.cpp        | 34 ++++++++++
  FEXCore/Source/Interface/Core/Frontend.cpp    |  5 ++
@@ -55,10 +54,10 @@ FEX_SILENTLOG=0. Built as 2610-d2rfix27.
  5 files changed, 160 insertions(+), 8 deletions(-)
 
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index 63280a42a..b11fae62d 100644
+index 1946dc946..2f4f976f6 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
-@@ -848,6 +848,24 @@ ContextImpl::CompileCodeResult ContextImpl::CompileCode(FEXCore::Core::InternalT
+@@ -854,6 +854,24 @@ ContextImpl::CompileCodeResult ContextImpl::CompileCode(FEXCore::Core::InternalT
    };
  }
  
@@ -83,7 +82,7 @@ index 63280a42a..b11fae62d 100644
  uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_t GuestRIP, uint64_t MaxInst) {
    if constexpr (BLOCK_DEBUGGING) {
      // Block debugging logic is hand-written and needs to be handled with care.
-@@ -875,6 +893,16 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
+@@ -881,6 +899,16 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
      return HostCode;
    }
  
@@ -100,7 +99,7 @@ index 63280a42a..b11fae62d 100644
    Thread->FrontendDecoder->SetupDecodeInstructionsAtEntry(Thread, GuestRIP, MaxInst);
  
    std::optional<ExecutableFileSectionInfo> Region = SyscallHandler->LookupExecutableFileSection(Thread, GuestRIP);
-@@ -1032,6 +1060,12 @@ uintptr_t ContextImpl::CompileSingleStep(FEXCore::Core::CpuStateFrame* Frame, ui
+@@ -1038,6 +1066,12 @@ uintptr_t ContextImpl::CompileSingleStep(FEXCore::Core::CpuStateFrame* Frame, ui
    // Invalidate might take a unique lock on this, to guarantee that during invalidation no code gets compiled
    auto lk = GuardSignalDeferringSection<std::shared_lock>(CodeInvalidationMutex, Thread);
  
@@ -114,10 +113,10 @@ index 63280a42a..b11fae62d 100644
    auto [CompiledCode, DebugData, StartAddr, Length, _] = CompileCode(Thread, GuestRIP, 1);
    auto CodePtr = CompiledCode.EntryPoints[GuestRIP];
 diff --git a/FEXCore/Source/Interface/Core/Frontend.cpp b/FEXCore/Source/Interface/Core/Frontend.cpp
-index 31d647a38..f51fe4997 100644
+index 94e4ac522..2ce86ee57 100644
 --- a/FEXCore/Source/Interface/Core/Frontend.cpp
 +++ b/FEXCore/Source/Interface/Core/Frontend.cpp
-@@ -1765,6 +1765,11 @@ void Decoder::SetupDecodeInstructionsAtEntry(FEXCore::Core::InternalThreadState*
+@@ -1806,6 +1806,11 @@ void Decoder::SetupDecodeInstructionsAtEntry(FEXCore::Core::InternalThreadState*
  
    TotalInstructions = 0;
  
@@ -154,7 +153,7 @@ index 42feabb1c..7d6cb2018 100644
    FEXCore::Core::CpuStateFrame BaseFrameState {};
  
 diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
-index 8f6eef906..0e68b5e69 100644
+index bfff833ba..57c6cf7c8 100644
 --- a/Source/Windows/ARM64EC/Module.cpp
 +++ b/Source/Windows/ARM64EC/Module.cpp
 @@ -50,6 +50,7 @@ $end_info$
@@ -165,7 +164,7 @@ index 8f6eef906..0e68b5e69 100644
  #include <cstdint>
  #include <cstdio>
  #include <type_traits>
-@@ -696,6 +697,42 @@ static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore:
+@@ -783,6 +784,42 @@ static void SynchronousExceptionHandler(FEXCore::Context::Context* CTX, FEXCore:
    ERROR_AND_DIE_FMT("This should always noreturn");
  }
  
@@ -208,7 +207,7 @@ index 8f6eef906..0e68b5e69 100644
  class ECSyscallHandler : public FEXCore::HLE::SyscallHandler, public FEXCore::Allocator::FEXAllocOperators {
  public:
    ECSyscallHandler() = default;
-@@ -739,7 +776,24 @@ public:
+@@ -826,7 +863,24 @@ public:
    }
  
    FEXCore::HLE::ExecutableRangeInfo QueryGuestExecutableRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Address) override {
@@ -234,7 +233,7 @@ index 8f6eef906..0e68b5e69 100644
    }
  
    void PreCompile() override {
-@@ -890,6 +944,13 @@ bool ResetToConsistentStateImpl(const ThreadCPUArea CPUArea, EXCEPTION_RECORD* E
+@@ -1028,6 +1082,13 @@ bool ResetToConsistentStateImpl(const ThreadCPUArea CPUArea, EXCEPTION_RECORD* E
        return true;
      }
  
@@ -342,5 +341,5 @@ index f093e3c0f..b9cfb25ff 100644
  
  void InvalidationTracker::DetectMonoBackpatcherBlock(FEXCore::Core::InternalThreadState* Thread, uint64_t HostPc) {
 -- 
-2.43.0
+2.53.0
 

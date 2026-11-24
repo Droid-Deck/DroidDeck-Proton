@@ -1,8 +1,8 @@
-From c849533928f839ba2d096c8d675f74aa62a226b3 Mon Sep 17 00:00:00 2001
+From 5be203ddc833313c38ad856a261ffaf5f8cb892f Mon Sep 17 00:00:00 2001
 From: maxjivi05 <maxjividen@gmail.com>
 Date: Sat, 21 Nov 2026 11:20:52 -0500
-Subject: [PATCH] InvalidationTracker: drop DEP promotion when a range becomes
- executable
+Subject: [PATCH 14/14] InvalidationTracker: drop DEP promotion when a range
+ becomes executable
 
 With DEP disabled, a readable but non-executable protection (for example
 PAGE_READWRITE while ntdll applies relocations) adds the range to
@@ -115,5 +115,5 @@ index b814fe7e0..a67e188ef 100644
    FEXCore::IntervalList<uint64_t> XIntervals;
    FEXCore::IntervalList<uint64_t> RWXIntervals;
 -- 
-2.43.0
+2.53.0
 

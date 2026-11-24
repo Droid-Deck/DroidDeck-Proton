@@ -1,8 +1,8 @@
-From 953b6fd1ebf943e4f9fda72a20b44febaa219fe0 Mon Sep 17 00:00:00 2001
+From 047bca38d0feca659f5093db652a99f7a947b64d Mon Sep 17 00:00:00 2001
 From: K11MCH1 <81425424+K11MCH1@users.noreply.github.com>
 Date: Sat, 31 Oct 2026 09:32:03 +0900
-Subject: [PATCH] ARM64EC: keep translated code on empty reads and off Wine's
- memory lock
+Subject: [PATCH 13/14] ARM64EC: keep translated code on empty reads and off
+ Wine's memory lock
 
 Under Wine, a few FEX paths that are cheap on Linux become calls that take
 Wine's global virtual memory lock, and one invalidates far more than it
@@ -36,6 +36,10 @@ load from 4127 samples to 129.
 
 The rpmalloc half (commit once, never decommit under MinGW) is a separate
 patch for External/rpmalloc.
+
+Rebased onto FEX-2611-68 (490bb02f) for DroidDeck-Proton 11-14.1: the CompiledBlocks counter
+moves to Arm64JITCore::EmitJITCode (CompileCode was renamed, 46099087) and the MemAlloc counter
+into NotifyMemoryAlloc's new tracked-allocation check (ba800514).
 ---
  CodeEmitter/CodeEmitter/Buffer.h              | 28 +++++++
  FEXCore/Source/Interface/Core/Core.cpp        | 10 +++
@@ -90,7 +94,7 @@ index 602eeb674..752ed3f60 100644
  
    size_t GetCursorOffset() const {
 diff --git a/FEXCore/Source/Interface/Core/Core.cpp b/FEXCore/Source/Interface/Core/Core.cpp
-index b11fae62d..cd28ff73d 100644
+index 2f4f976f6..32a5767a8 100644
 --- a/FEXCore/Source/Interface/Core/Core.cpp
 +++ b/FEXCore/Source/Interface/Core/Core.cpp
 @@ -8,6 +8,7 @@ desc: Glues Frontend, OpDispatcher and IR Opts & Compilation, LookupCache, Dispa
@@ -127,7 +131,7 @@ index b11fae62d..cd28ff73d 100644
  
    if (NewCodeBuffer) {
      // Allocate new CodeBuffer + L3 LookupCache and clear L1+L2 caches
-@@ -1103,6 +1112,7 @@ void ContextImpl::InvalidateThreadCachedCodeRange(FEXCore::Core::InternalThreadS
+@@ -1109,6 +1118,7 @@ void ContextImpl::InvalidateThreadCachedCodeRange(FEXCore::Core::InternalThreadS
    Thread->FrontendDecoder->ResetExecutableRangeCache();
  
    if (Thread->LookupCache->InvalidateCacheRange(Start, Length)) {
@@ -136,7 +140,7 @@ index b11fae62d..cd28ff73d 100644
  
      // This may cause access violations in the thread on Windows as zeroing is not atomic, this is handled by the frontend
 diff --git a/FEXCore/Source/Interface/Core/JIT/JIT.cpp b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
-index ef7e33299..230ae5133 100644
+index 435afed5e..54f4819c2 100644
 --- a/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 +++ b/FEXCore/Source/Interface/Core/JIT/JIT.cpp
 @@ -11,6 +11,7 @@ desc: Main glue logic of the arm64 splatter backend
@@ -147,15 +151,15 @@ index ef7e33299..230ae5133 100644
  #include "Interface/Context/Context.h"
  #include "Interface/Core/LookupCache.h"
  #include "Interface/Core/Dispatcher/Dispatcher.h"
-@@ -878,6 +879,7 @@ CodeBuffer::CodeBufferAllocation Arm64JITCore::AllocateCodeBufferInSharedCache(s
+@@ -854,6 +855,7 @@ CodeBuffer::CodeBufferAllocation Arm64JITCore::AllocateCodeBufferInSharedCache(s
  
- CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry, uint64_t Size, bool SingleInst, const FEXCore::IR::IRListView* IR,
+ CPUBackend::CompiledCode Arm64JITCore::EmitJITCode(uint64_t Entry, uint64_t Size, bool SingleInst, const FEXCore::IR::IRListView* IR,
                                                     FEXCore::Core::DebugData* DebugData, bool CheckTF) {
 +  FEXCore::Diag::Note(FEXCore::Diag::CompiledBlocks);
-   FEXCORE_PROFILE_SCOPED("Arm64::CompileCode");
+   FEXCORE_PROFILE_SCOPED("Arm64::EmitJITCode");
  
    const auto PrevNumAllocations = Relocations.size();
-@@ -1200,6 +1202,7 @@ CPUBackend::CompiledCode Arm64JITCore::CompileCode(uint64_t Entry, uint64_t Size
+@@ -1176,6 +1178,7 @@ CPUBackend::CompiledCode Arm64JITCore::EmitJITCode(uint64_t Entry, uint64_t Size
  }
  
  CPUBackend::CompiledCode Arm64JITCore::LoadCachedCode(std::span<const uint8_t> HostBytes) {
@@ -290,7 +294,7 @@ index 000000000..2bba1783f
 +}
 +} // namespace FEXCore::Diag
 diff --git a/Source/Windows/ARM64EC/Module.cpp b/Source/Windows/ARM64EC/Module.cpp
-index 27319814f..747dd23b4 100644
+index 9bf3b557e..4cf494eaf 100644
 --- a/Source/Windows/ARM64EC/Module.cpp
 +++ b/Source/Windows/ARM64EC/Module.cpp
 @@ -6,6 +6,7 @@ desc: Implements the ARM64EC BT module API using FEXCore
@@ -301,7 +305,7 @@ index 27319814f..747dd23b4 100644
  #include <FEXCore/fextl/fmt.h>
  #include <FEXCore/Core/X86Enums.h>
  #include <FEXCore/Core/SignalDelegator.h>
-@@ -642,6 +643,7 @@ static bool DropStaleNoExecBlock(FEXCore::Core::InternalThreadState* Thread) {
+@@ -722,6 +723,7 @@ static bool DropStaleNoExecBlock(FEXCore::Core::InternalThreadState* Thread) {
  
    const uint64_t FirstPage = Rip & FEXCore::Utils::FEX_PAGE_MASK;
    const uint64_t LastPage = (End - 1) & FEXCore::Utils::FEX_PAGE_MASK;
@@ -309,7 +313,7 @@ index 27319814f..747dd23b4 100644
    InvalidationTracker->InvalidateAlignedInterval(FirstPage, LastPage - FirstPage + FEXCore::Utils::FEX_PAGE_SIZE, false);
  
    Fault.FaultToTopAndGeneratedException = false;
-@@ -764,6 +766,7 @@ public:
+@@ -851,6 +853,7 @@ public:
    }
  
    void InvalidateGuestCodeRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) override {
@@ -317,15 +321,15 @@ index 27319814f..747dd23b4 100644
      InvalidationTracker->InvalidateAlignedInterval(Start, Length, false);
    }
  
-@@ -1053,6 +1056,7 @@ void NotifyMemoryAlloc(void* Address, SIZE_T Size, ULONG Type, ULONG Prot, BOOL
-   } else {
-     // MEM_RESET(_UNDO) ignores the passed permissions
-     if (!Status && !(Type & (MEM_RESET | MEM_RESET_UNDO))) {
+@@ -1267,6 +1270,7 @@ void NotifyMemoryAlloc(void* Address, SIZE_T Size, ULONG Type, ULONG Prot, BOOL
+     // (TYPE & MEM_RESERVE) = No need to track
+     const bool IsNotReserveWithoutCommit = (Type & (MEM_COMMIT | MEM_RESERVE)) != MEM_RESERVE;
+     if (WasSuccess && IsNotReset && IsNotReserveWithoutCommit) {
 +      FEXCore::Diag::Note(FEXCore::Diag::MemAlloc, Size);
        InvalidationTracker->HandleMemoryProtectionNotification(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), Prot);
      }
      ThreadCreationMutex.unlock();
-@@ -1068,6 +1072,7 @@ void NotifyMemoryFree(void* Address, SIZE_T Size, ULONG FreeType, BOOL After, NT
+@@ -1282,6 +1286,7 @@ void NotifyMemoryFree(void* Address, SIZE_T Size, ULONG FreeType, BOOL After, NT
      ThreadCreationMutex.lock();
    } else {
      if (!Status) {
@@ -333,7 +337,7 @@ index 27319814f..747dd23b4 100644
        InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), true);
      }
      ThreadCreationMutex.unlock();
-@@ -1083,6 +1088,7 @@ void NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After,
+@@ -1297,6 +1302,7 @@ void NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After,
      ThreadCreationMutex.lock();
    } else {
      if (!Status) {
@@ -341,7 +345,7 @@ index 27319814f..747dd23b4 100644
        InvalidationTracker->HandleMemoryProtectionNotification(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), NewProt);
      }
      ThreadCreationMutex.unlock();
-@@ -1110,6 +1116,7 @@ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Si
+@@ -1324,6 +1330,7 @@ NTSTATUS NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Si
      const uint64_t GuestSize = static_cast<uint64_t>(Size);
  
      if (!HandleImageMap(GuestAddress) && IsLikelyMapViewNotification(GuestAddress, GuestSize, Prot)) {
@@ -349,7 +353,7 @@ index 27319814f..747dd23b4 100644
        InvalidationTracker->HandleMemoryProtectionNotification(GuestAddress, GuestSize, Prot);
      }
    }
-@@ -1126,6 +1133,7 @@ void NotifyUnmapViewOfSection(void* Address, BOOL After, NTSTATUS Status) {
+@@ -1340,6 +1347,7 @@ void NotifyUnmapViewOfSection(void* Address, BOOL After, NTSTATUS Status) {
    if (!After) {
      ThreadCreationMutex.lock();
      auto [Start, Size] = InvalidationTracker->InvalidateContainingSection(reinterpret_cast<uint64_t>(Address), true);
@@ -357,7 +361,7 @@ index 27319814f..747dd23b4 100644
      if (Size) {
        HandleImageUnmap(Start, Size);
      }
-@@ -1140,6 +1148,7 @@ void FlushInstructionCacheHeavy(const void* Address, SIZE_T Size) {
+@@ -1354,6 +1362,7 @@ void FlushInstructionCacheHeavy(const void* Address, SIZE_T Size) {
    }
  
    std::scoped_lock Lock(ThreadCreationMutex);
@@ -365,7 +369,7 @@ index 27319814f..747dd23b4 100644
    InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
  }
  
-@@ -1149,6 +1158,7 @@ void BTCpu64FlushInstructionCache(const void* Address, SIZE_T Size) {
+@@ -1363,6 +1372,7 @@ void BTCpu64FlushInstructionCache(const void* Address, SIZE_T Size) {
    }
  
    std::scoped_lock Lock(ThreadCreationMutex);
@@ -373,7 +377,7 @@ index 27319814f..747dd23b4 100644
    InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
  }
  
-@@ -1158,6 +1168,7 @@ void BTCpu64NotifyMemoryDirty(void* Address, SIZE_T Size) {
+@@ -1372,6 +1382,7 @@ void BTCpu64NotifyMemoryDirty(void* Address, SIZE_T Size) {
    }
  
    std::scoped_lock Lock(ThreadCreationMutex);
@@ -381,7 +385,7 @@ index 27319814f..747dd23b4 100644
    InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
  }
  
-@@ -1208,8 +1219,20 @@ void BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After
+@@ -1422,8 +1433,20 @@ void BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After
      return;
    }
  
@@ -500,5 +504,5 @@ index d2a80bcaa..b814fe7e0 100644
    bool HandleRWXAccessViolation(FEXCore::Core::InternalThreadState* Thread, uint64_t HostPC, uint64_t FaultAddress);
  
 -- 
-2.55.0.windows.5
+2.53.0
 
