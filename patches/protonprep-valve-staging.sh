@@ -39,6 +39,9 @@ apply_all_in_dir() {
     apply_patch "../patches/dxvk/dxgi-auto-detect-hdr.patch"
     # StarCraft II: avoid GPU hangs with D3D9 constant buffer streaming on Navi 10 (#790, #845).
     apply_patch "../patches/dxvk/starcraft2-disable-constant-buffer-streaming-on-navi10.patch"
+    # UWP titles (CoreWindow swapchains and Forza Horizon 4 hardware profiler).
+    apply_patch "../patches/dxvk/dxgi-create-swapchain-for-core-window.patch"
+    apply_patch "../patches/dxvk/forza-horizon-4-dummy-composition-swapchain.patch"
     popd
 
     pushd d7vk

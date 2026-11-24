@@ -1,0 +1,418 @@
+diff --git a/dlls/msxml3/httprequest.c b/dlls/msxml3/httprequest.c
+index 7dcc31e..b04d34d 100644
+--- a/dlls/msxml3/httprequest.c
++++ b/dlls/msxml3/httprequest.c
+@@ -471,6 +471,21 @@ static ULONG WINAPI BSCHttpNegotiate_Release(IHttpNegotiate *iface)
+     return IBindStatusCallback_Release(&This->IBindStatusCallback_iface);
+ }
+ 
++/* Headers the HTTP stack computes from the request itself. Forwarding the caller's
++ * copy as well sends the header twice, which servers reject as a malformed request. */
++static BOOL is_restricted_request_header(const WCHAR *name)
++{
++    static const WCHAR *const restricted[] =
++    {
++        L"Content-Length", L"Host", L"Connection", L"Transfer-Encoding",
++    };
++    unsigned int i;
++
++    for (i = 0; i < ARRAY_SIZE(restricted); i++)
++        if (!wcsicmp(name, restricted[i])) return TRUE;
++    return FALSE;
++}
++
+ static HRESULT WINAPI BSCHttpNegotiate_BeginningTransaction(IHttpNegotiate *iface,
+         LPCWSTR url, LPCWSTR headers, DWORD reserved, LPWSTR *add_headers)
+ {
+@@ -530,6 +545,9 @@ static HRESULT WINAPI BSCHttpNegotiate_BeginningTransaction(IHttpNegotiate *ifac
+     /* user headers */
+     LIST_FOR_EACH_ENTRY(entry, &This->request->reqheaders, struct httpheader, entry)
+     {
++        if (is_restricted_request_header(entry->header))
++            continue;
++
+         lstrcpyW(ptr, entry->header);
+         ptr += SysStringLen(entry->header);
+ 
+@@ -690,6 +708,7 @@ static const IAuthenticateVtbl AuthenticateVtbl = {
+     Authenticate_Authenticate
+ };
+ 
++
+ static HRESULT BindStatusCallback_create(httprequest* This, BindStatusCallback **obj, const VARIANT *body)
+ {
+     BindStatusCallback *bsc;
+@@ -913,7 +932,9 @@ static HRESULT httprequest_open(httprequest *This, BSTR method, BSTR url,
+     }
+     else if (!wcsicmp(method, L"DELETE") ||
+              !wcsicmp(method, L"HEAD") ||
+-             !wcsicmp(method, L"PROPFIND"))
++             !wcsicmp(method, L"PROPFIND") ||
++             !wcsicmp(method, L"PATCH") ||
++             !wcsicmp(method, L"OPTIONS"))
+     {
+         This->verb = BINDVERB_CUSTOM;
+         SysReAllocString(&This->custom, method);
+@@ -998,7 +1019,7 @@ static HRESULT httprequest_setRequestHeader(httprequest *This, BSTR header, BSTR
+     /* replace existing header value if already added */
+     LIST_FOR_EACH_ENTRY(entry, &This->reqheaders, struct httpheader, entry)
+     {
+-        if (wcscmp(entry->header, header) == 0)
++        if (wcsicmp(entry->header, header) == 0)
+         {
+             LONG length = SysStringLen(entry->value);
+             HRESULT hr;
+@@ -2061,8 +2082,6 @@ static const struct IServerXMLHTTPRequestVtbl ServerXMLHTTPRequestVtbl =
+     ServerXMLHTTPRequest_setOption
+ };
+ 
+-static DWORD xhr2_work_queue;
+-
+ struct xml_http_request_2
+ {
+     httprequest req;
+@@ -2070,9 +2089,11 @@ struct xml_http_request_2
+     IRtwqAsyncCallback IRtwqAsyncCallback_iface;
+     IDispatch IDispatch_iface;
+ 
++    DWORD work_queue;
+     IXMLHTTPRequest2Callback *callback;
+     IXMLHTTPRequest3Callback *callback3;
+     ISequentialStream *response_body;
++    ISequentialStream *custom_response_stream;
+     ISequentialStream *request_body;
+     ULONGLONG request_body_size;
+ };
+@@ -2130,10 +2151,13 @@ static ULONG WINAPI xml_http_request_2_Release(IXMLHTTPRequest3 *iface)
+     {
+         /* do not call httprequest_put_onreadystatechange to avoid ref cycle */
+         This->req.sink = NULL;
++        httprequest_release(&This->req);
+         if (This->response_body) ISequentialStream_Release(This->response_body);
++        if (This->custom_response_stream) ISequentialStream_Release(This->custom_response_stream);
+         if (This->request_body) ISequentialStream_Release(This->request_body);
+         if (This->callback3) IXMLHTTPRequest3Callback_Release(This->callback3);
+         if (This->callback) IXMLHTTPRequest2Callback_Release(This->callback);
++        if (This->work_queue) RtwqUnlockWorkQueue(This->work_queue);
+         free(This);
+         RtwqShutdown();
+     }
+@@ -2178,7 +2202,10 @@ static HRESULT WINAPI xml_http_request_2_Open(IXMLHTTPRequest3 *iface, const WCH
+     if (password) V_BSTR(&password_v) = SysAllocString(password);
+     else V_BSTR(&password_v) = SysAllocString(&empty);
+ 
+-    if (FAILED(hr = httprequest_open(&This->req, (BSTR)method, (BSTR)url, async_v, username_v, password_v)))
++    hr = httprequest_open(&This->req, (BSTR)method, (BSTR)url, async_v, username_v, password_v);
++    VariantClear(&username_v);
++    VariantClear(&password_v);
++    if (FAILED(hr))
+         return hr;
+     return httprequest_setRequestHeader(&This->req, (BSTR)accept_encoding, (BSTR)&empty);
+ }
+@@ -2191,7 +2218,14 @@ static HRESULT WINAPI xml_http_request_2_Send(IXMLHTTPRequest3 *iface, ISequenti
+ 
+     TRACE("(%p)->(%p %s)\n", This, body, wine_dbgstr_longlong( body_size ));
+ 
+-    if (body_size)
++    if (This->request_body)
++    {
++        ISequentialStream_Release(This->request_body);
++        This->request_body = NULL;
++    }
++    This->request_body_size = 0;
++
++    if (body && body_size)
+     {
+         ISequentialStream_AddRef(body);
+         This->request_body = body;
+@@ -2199,9 +2233,10 @@ static HRESULT WINAPI xml_http_request_2_Send(IXMLHTTPRequest3 *iface, ISequenti
+     }
+ 
+     if (FAILED(hr = RtwqCreateAsyncResult(NULL, &This->IRtwqAsyncCallback_iface, NULL, &result)))
++    {
+         return hr;
+-    // IRtwqAsyncCallback_Invoke(&This->IRtwqAsyncCallback_iface, result);
+-    hr = RtwqPutWorkItem(xhr2_work_queue, 0, result);
++    }
++    hr = RtwqPutWorkItem(This->work_queue, 0, result);
+     if (result) IRtwqAsyncResult_Release(result);
+ 
+     return hr;
+@@ -2210,8 +2245,8 @@ static HRESULT WINAPI xml_http_request_2_Send(IXMLHTTPRequest3 *iface, ISequenti
+ static HRESULT WINAPI xml_http_request_2_Abort(IXMLHTTPRequest3 *iface)
+ {
+     struct xml_http_request_2 *This = impl_from_IXMLHTTPRequest3(iface);
+-    TRACE("(%p) stub!\n", This);
+-    return E_NOTIMPL;
++    TRACE("(%p)\n", This);
++    return httprequest_abort(&This->req);
+ }
+ 
+ static HRESULT WINAPI xml_http_request_2_SetCookie(IXMLHTTPRequest3 *iface, const XHR_COOKIE *cookie, DWORD *state)
+@@ -2224,8 +2259,18 @@ static HRESULT WINAPI xml_http_request_2_SetCookie(IXMLHTTPRequest3 *iface, cons
+ static HRESULT WINAPI xml_http_request_2_SetCustomResponseStream(IXMLHTTPRequest3 *iface, ISequentialStream *stream)
+ {
+     struct xml_http_request_2 *This = impl_from_IXMLHTTPRequest3(iface);
+-    FIXME("(%p)->(%p) stub!\n", This, stream);
+-    return E_NOTIMPL;
++
++    TRACE("(%p)->(%p)\n", This, stream);
++
++    if (!stream) return E_INVALIDARG;
++    if (This->req.state != READYSTATE_UNINITIALIZED && This->req.state != READYSTATE_LOADING)
++        return E_FAIL;
++
++    if (This->custom_response_stream)
++        ISequentialStream_Release(This->custom_response_stream);
++    ISequentialStream_AddRef(stream);
++    This->custom_response_stream = stream;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI xml_http_request_2_SetProperty(IXMLHTTPRequest3 *iface, XHR_PROPERTY property, ULONGLONG value)
+@@ -2279,6 +2324,7 @@ static HRESULT WINAPI xml_http_request_2_SetProperty(IXMLHTTPRequest3 *iface, XH
+     return S_OK;
+ }
+ 
++
+ static HRESULT WINAPI xml_http_request_2_SetRequestHeader(IXMLHTTPRequest3 *iface,
+                                                           const WCHAR *header, const WCHAR *value)
+ {
+@@ -2290,8 +2336,21 @@ static HRESULT WINAPI xml_http_request_2_SetRequestHeader(IXMLHTTPRequest3 *ifac
+ static HRESULT WINAPI xml_http_request_2_GetAllResponseHeaders(IXMLHTTPRequest3 *iface, WCHAR **headers)
+ {
+     struct xml_http_request_2 *This = impl_from_IXMLHTTPRequest3(iface);
+-    FIXME("(%p)->(%p) stub!\n", This, headers);
+-    return E_NOTIMPL;
++    const WCHAR *raw;
++    size_t bytes;
++
++    TRACE("(%p)->(%p)\n", This, headers);
++
++    if (!headers) return E_POINTER;
++    *headers = NULL;
++    if (This->req.state != READYSTATE_COMPLETE && !This->req.raw_respheaders)
++        return E_PENDING;
++
++    raw = This->req.raw_respheaders ? This->req.raw_respheaders : L"";
++    bytes = (lstrlenW(raw) + 1) * sizeof(WCHAR);
++    if (!(*headers = CoTaskMemAlloc(bytes))) return E_OUTOFMEMORY;
++    memcpy(*headers, raw, bytes);
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI xml_http_request_2_GetCookie(IXMLHTTPRequest3 *iface, const WCHAR *url,
+@@ -2307,18 +2366,30 @@ static HRESULT WINAPI xml_http_request_2_GetResponseHeader(IXMLHTTPRequest3 *ifa
+                                                            const WCHAR *header, WCHAR **value)
+ {
+     struct xml_http_request_2 *This = impl_from_IXMLHTTPRequest3(iface);
++    BSTR bstr_val = NULL;
+     HRESULT hr;
+ 
+     TRACE("(%p)->(%s %p)\n", This, debugstr_w(header), value);
+ 
+-    hr = httprequest_getResponseHeader(&This->req, (BSTR)header, value);
++    if (!value) return E_POINTER;
++    *value = NULL;
++
++    hr = httprequest_getResponseHeader(&This->req, (BSTR)header, &bstr_val);
+ 
+ #define E_FILE_NOT_FOUND                                   _HRESULT_TYPEDEF_(0x80070002)
+ 
+     if (hr == S_FALSE)
+-    {
+-        *value = NULL;
+         return E_FILE_NOT_FOUND;
++
++    if (hr == S_OK && bstr_val)
++    {
++        size_t bytes = (SysStringLen(bstr_val) + 1) * sizeof(WCHAR);
++        *value = CoTaskMemAlloc(bytes);
++        if (*value)
++            memcpy(*value, bstr_val, bytes);
++        else
++            hr = E_OUTOFMEMORY;
++        SysFreeString(bstr_val);
+     }
+ 
+     return hr;
+@@ -2390,7 +2461,7 @@ static HRESULT WINAPI xml_http_request_2_IRtwqAsyncCallback_GetParameters(IRtwqA
+     TRACE("(%p)->(%p %p)\n", This, flags, queue);
+ 
+     *flags = 0;
+-    *queue = xhr2_work_queue;
++    *queue = This->work_queue;
+     return S_OK;
+ }
+ 
+@@ -2398,20 +2469,21 @@ static HRESULT WINAPI xml_http_request_2_IRtwqAsyncCallback_Invoke(IRtwqAsyncCal
+         IRtwqAsyncResult *result)
+ {
+     struct xml_http_request_2 *This = xml_http_request_2_from_IRtwqAsyncCallback(iface);
++    IXMLHTTPRequest2 *xhr2_iface = (IXMLHTTPRequest2 *)&This->IXMLHTTPRequest3_iface;
+     IStream *stream = NULL;
+     SAFEARRAY *sa = NULL;
+     VARIANT body_v;
+-    HRESULT hr;
+-    ULONG read;
++    HRESULT hr, co_hr;
+ 
+     TRACE("(%p)->(%p)\n", This, result);
+ 
++    co_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+     VariantInit(&body_v);
+ 
+     if (This->request_body)
+     {
+         SAFEARRAYBOUND bound;
+-        ULONGLONG body_size;
++        ULONGLONG body_size, total = 0;
+         STATSTG stream_stat;
+         LARGE_INTEGER li;
+         void *ptr;
+@@ -2442,16 +2514,25 @@ static HRESULT WINAPI xml_http_request_2_IRtwqAsyncCallback_Invoke(IRtwqAsyncCal
+         V_VT(&body_v) = VT_ARRAY | VT_UI1;
+         SafeArrayAccessData(sa, &ptr);
+ 
+-        if (stream)
+-            hr = IStream_Read(stream, ptr, body_size, &read);
+-        else
+-            hr = ISequentialStream_Read(This->request_body, ptr, body_size, &read);
++        hr = S_OK;
++        while (total < body_size)
++        {
++            ULONG chunk = (body_size - total > 0x7fffffff) ? 0x7fffffff : (ULONG)(body_size - total);
++            ULONG read = 0;
++
++            if (stream)
++                hr = IStream_Read(stream, (BYTE *)ptr + total, chunk, &read);
++            else
++                hr = ISequentialStream_Read(This->request_body, (BYTE *)ptr + total, chunk, &read);
++            total += read;
++            if (FAILED(hr) || !read) break;
++        }
+         SafeArrayUnaccessData(sa);
+-        if (FAILED(hr) || read < body_size)
++        if (FAILED(hr) || total < body_size)
+         {
+             /* Windows doesn't send the body in this case but still sends request with Content-Length
+              * set to requested body size. */
+-            ERR("Failed to read from stream, hr %#lx, read %lu\n", hr, read);
++            ERR("Failed to read from stream, hr %#lx, read %I64u/%I64u\n", hr, total, body_size);
+             SafeArrayDestroy(sa);
+             sa = NULL;
+             V_VT(&body_v) = VT_NULL;
+@@ -2463,11 +2544,21 @@ static HRESULT WINAPI xml_http_request_2_IRtwqAsyncCallback_Invoke(IRtwqAsyncCal
+ 
+     hr = httprequest_send(&This->req, body_v);
+ 
++    if (FAILED(hr) && This->req.state != READYSTATE_COMPLETE && This->callback)
++    {
++        IXMLHTTPRequest2Callback *cb = This->callback;
++        IXMLHTTPRequest2Callback_AddRef(cb);
++        IXMLHTTPRequest2Callback_OnError(cb, xhr2_iface, hr);
++        IXMLHTTPRequest2Callback_Release(cb);
++    }
++
+ done:
+     if (sa)
+         SafeArrayDestroy(sa);
+     if (stream)
+         IStream_Release(stream);
++    if (SUCCEEDED(co_hr))
++        CoUninitialize();
+     return IRtwqAsyncResult_SetStatus(result, hr);
+ }
+ 
+@@ -2573,7 +2664,7 @@ static HRESULT WINAPI xml_http_request_2_IDispatch_Invoke(IDispatch *iface, DISP
+             return S_OK;
+         }
+ 
+-        IXMLHTTPRequest2Callback_OnHeadersAvailable(This->callback, xhr2_iface, status, status_str);
++        IXMLHTTPRequest2Callback_OnHeadersAvailable(This->callback, xhr2_iface, status, status_str ? status_str : L"");
+         SysFreeString(status_str);
+ 
+         if (This->response_body) ISequentialStream_Release(This->response_body);
+@@ -2582,14 +2673,62 @@ static HRESULT WINAPI xml_http_request_2_IDispatch_Invoke(IDispatch *iface, DISP
+         if (FAILED(hr = httprequest_get_responseStream(&This->req, &body_v)) ||
+             FAILED(hr = IUnknown_QueryInterface(V_UNKNOWN(&body_v), &IID_ISequentialStream, (void **)&This->response_body)))
+         {
++            VariantClear(&body_v);
+             WARN("failed to get response stream, error %#lx\n", hr);
+             IXMLHTTPRequest2Callback_OnError(This->callback, xhr2_iface, hr);
+             IXMLHTTPRequest2Callback_Release(This->callback);
+             return S_OK;
+         }
++        VariantClear(&body_v);
+ 
+-        IXMLHTTPRequest2Callback_OnDataAvailable(This->callback, xhr2_iface, This->response_body);
+-        IXMLHTTPRequest2Callback_OnResponseReceived(This->callback, xhr2_iface, This->response_body);
++        if (This->custom_response_stream)
++        {
++            BYTE buf[4096];
++            for (;;)
++            {
++                ULONG read = 0, offset = 0;
++                HRESULT read_hr = ISequentialStream_Read(This->response_body, buf, sizeof(buf), &read);
++                if (FAILED(read_hr))
++                {
++                    WARN("failed to read response body, error %#lx\n", read_hr);
++                    IXMLHTTPRequest2Callback_OnError(This->callback, xhr2_iface, read_hr);
++                    IXMLHTTPRequest2Callback_Release(This->callback);
++                    return S_OK;
++                }
++                while (offset < read)
++                {
++                    ULONG written = 0;
++                    hr = ISequentialStream_Write(This->custom_response_stream, buf + offset, read - offset, &written);
++                    if (FAILED(hr))
++                    {
++                        WARN("failed to write custom response stream, error %#lx\n", hr);
++                        IXMLHTTPRequest2Callback_OnError(This->callback, xhr2_iface, hr);
++                        IXMLHTTPRequest2Callback_Release(This->callback);
++                        return S_OK;
++                    }
++                    if (!written) break;
++                    offset += written;
++                }
++                if (read_hr == S_FALSE || !read) break;
++            }
++            {
++                ULONG written = 0;
++                hr = ISequentialStream_Write(This->custom_response_stream, buf, 0, &written);
++                if (FAILED(hr))
++                {
++                    WARN("failed to finalize custom response stream, error %#lx\n", hr);
++                    IXMLHTTPRequest2Callback_OnError(This->callback, xhr2_iface, hr);
++                    IXMLHTTPRequest2Callback_Release(This->callback);
++                    return S_OK;
++                }
++            }
++            IXMLHTTPRequest2Callback_OnResponseReceived(This->callback, xhr2_iface, This->custom_response_stream);
++        }
++        else
++        {
++            IXMLHTTPRequest2Callback_OnDataAvailable(This->callback, xhr2_iface, This->response_body);
++            IXMLHTTPRequest2Callback_OnResponseReceived(This->callback, xhr2_iface, This->response_body);
++        }
+         IXMLHTTPRequest2Callback_Release(This->callback);
+     }
+ 
+@@ -2686,14 +2825,16 @@ HRESULT XMLHTTPRequest2_create(void **obj)
+     /* do not call httprequest_put_onreadystatechange to avoid ref cycle */
+     xhr2->req.sink = &xhr2->IDispatch_iface;
+ 
++    xhr2->work_queue = 0;
+     xhr2->callback = NULL;
+     xhr2->callback3 = NULL;
+     xhr2->request_body = NULL;
+     xhr2->response_body = NULL;
++    xhr2->custom_response_stream = NULL;
+ 
+     /* for async http requests we need window message queue */
+     RtwqStartup();
+-    if (!xhr2_work_queue) RtwqAllocateWorkQueue(RTWQ_MULTITHREADED_WORKQUEUE, &xhr2_work_queue);
++    RtwqAllocateWorkQueue(RTWQ_MULTITHREADED_WORKQUEUE, &xhr2->work_queue);
+ 
+     *obj = &xhr2->IXMLHTTPRequest3_iface;
+     TRACE("returning iface %p\n", *obj);

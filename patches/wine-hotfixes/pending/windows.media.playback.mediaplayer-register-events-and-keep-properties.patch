@@ -1,0 +1,660 @@
+diff --git a/dlls/windows.media.playback.mediaplayer/main.c b/dlls/windows.media.playback.mediaplayer/main.c
+index 3c3c24d..68515f9 100644
+--- a/dlls/windows.media.playback.mediaplayer/main.c
++++ b/dlls/windows.media.playback.mediaplayer/main.c
+@@ -21,9 +21,113 @@
+ #include "private.h"
+ 
+ #include "wine/debug.h"
++#include "wine/list.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(mediaplayer);
+ 
++enum media_player_event_kind
++{
++    EVENT_MEDIA_OPENED,
++    EVENT_MEDIA_ENDED,
++    EVENT_MEDIA_FAILED,
++    EVENT_CURRENT_STATE_CHANGED,
++    EVENT_PLAYBACK_MEDIA_MARKER_REACHED,
++    EVENT_RATE_CHANGED,
++    EVENT_VOLUME_CHANGED,
++    EVENT_SEEK_COMPLETED,
++    EVENT_BUFFERING_STARTED,
++    EVENT_BUFFERING_ENDED,
++};
++
++struct media_player_event_entry
++{
++    struct list entry;
++    enum media_player_event_kind kind;
++    INT64 token;
++    IUnknown *handler;
++};
++
++struct media_player_rate_changed_args
++{
++    IMediaPlayerRateChangedEventArgs IMediaPlayerRateChangedEventArgs_iface;
++    LONG ref;
++    DOUBLE new_rate;
++};
++
++static inline struct media_player_rate_changed_args *impl_from_IMediaPlayerRateChangedEventArgs(
++        IMediaPlayerRateChangedEventArgs *iface )
++{
++    return CONTAINING_RECORD( iface, struct media_player_rate_changed_args, IMediaPlayerRateChangedEventArgs_iface );
++}
++
++static HRESULT WINAPI rate_changed_args_QueryInterface( IMediaPlayerRateChangedEventArgs *iface, REFIID iid, void **out )
++{
++    if (IsEqualGUID( iid, &IID_IUnknown ) ||
++        IsEqualGUID( iid, &IID_IInspectable ) ||
++        IsEqualGUID( iid, &IID_IAgileObject ) ||
++        IsEqualGUID( iid, &IID_IMediaPlayerRateChangedEventArgs ))
++    {
++        *out = iface;
++        IInspectable_AddRef( *out );
++        return S_OK;
++    }
++
++    *out = NULL;
++    return E_NOINTERFACE;
++}
++
++static ULONG WINAPI rate_changed_args_AddRef( IMediaPlayerRateChangedEventArgs *iface )
++{
++    struct media_player_rate_changed_args *impl = impl_from_IMediaPlayerRateChangedEventArgs( iface );
++    return InterlockedIncrement( &impl->ref );
++}
++
++static ULONG WINAPI rate_changed_args_Release( IMediaPlayerRateChangedEventArgs *iface )
++{
++    struct media_player_rate_changed_args *impl = impl_from_IMediaPlayerRateChangedEventArgs( iface );
++    ULONG ref = InterlockedDecrement( &impl->ref );
++    if (!ref) free( impl );
++    return ref;
++}
++
++static HRESULT WINAPI rate_changed_args_GetIids( IMediaPlayerRateChangedEventArgs *iface, ULONG *iid_count, IID **iids )
++{
++    *iid_count = 0;
++    *iids = NULL;
++    return S_OK;
++}
++
++static HRESULT WINAPI rate_changed_args_GetRuntimeClassName( IMediaPlayerRateChangedEventArgs *iface, HSTRING *class_name )
++{
++    return WindowsCreateString( L"Windows.Media.Playback.MediaPlayerRateChangedEventArgs",
++                                wcslen( L"Windows.Media.Playback.MediaPlayerRateChangedEventArgs" ), class_name );
++}
++
++static HRESULT WINAPI rate_changed_args_GetTrustLevel( IMediaPlayerRateChangedEventArgs *iface, TrustLevel *trust_level )
++{
++    *trust_level = BaseTrust;
++    return S_OK;
++}
++
++static HRESULT WINAPI rate_changed_args_get_NewRate( IMediaPlayerRateChangedEventArgs *iface, DOUBLE *value )
++{
++    struct media_player_rate_changed_args *impl = impl_from_IMediaPlayerRateChangedEventArgs( iface );
++    if (!value) return E_POINTER;
++    *value = impl->new_rate;
++    return S_OK;
++}
++
++static const struct IMediaPlayerRateChangedEventArgsVtbl rate_changed_args_vtbl =
++{
++    rate_changed_args_QueryInterface,
++    rate_changed_args_AddRef,
++    rate_changed_args_Release,
++    rate_changed_args_GetIids,
++    rate_changed_args_GetRuntimeClassName,
++    rate_changed_args_GetTrustLevel,
++    rate_changed_args_get_NewRate,
++};
++
+ struct media_player
+ {
+     IMediaPlayer IMediaPlayer_iface;
+@@ -32,8 +136,141 @@ struct media_player
+ 
+     ISystemMediaTransportControls *controls;
+     HWND window;
++
++    CRITICAL_SECTION cs;
++    struct list event_handlers;
++    INT64 next_token;
++
++    boolean auto_play;
++    boolean looping;
++    boolean muted;
++    DOUBLE rate;
++    DOUBLE volume;
+ };
+ 
++static HRESULT media_player_add_event( struct media_player *impl, enum media_player_event_kind kind,
++                                       IUnknown *handler, EventRegistrationToken *token )
++{
++    struct media_player_event_entry *entry;
++
++    if (!token) return E_POINTER;
++    token->value = 0;
++    if (!handler) return E_INVALIDARG;
++
++    if (!(entry = calloc( 1, sizeof( *entry ) ))) return E_OUTOFMEMORY;
++    entry->kind = kind;
++    entry->handler = handler;
++    IUnknown_AddRef( handler );
++
++    EnterCriticalSection( &impl->cs );
++    entry->token = ++impl->next_token;
++    list_add_tail( &impl->event_handlers, &entry->entry );
++    LeaveCriticalSection( &impl->cs );
++
++    token->value = entry->token;
++    return S_OK;
++}
++
++static HRESULT media_player_remove_event( struct media_player *impl, enum media_player_event_kind kind,
++                                          EventRegistrationToken token )
++{
++    struct media_player_event_entry *entry, *next;
++    IUnknown *to_release = NULL;
++
++    EnterCriticalSection( &impl->cs );
++    LIST_FOR_EACH_ENTRY_SAFE( entry, next, &impl->event_handlers, struct media_player_event_entry, entry )
++    {
++        if (entry->kind == kind && entry->token == token.value)
++        {
++            list_remove( &entry->entry );
++            to_release = entry->handler;
++            free( entry );
++            break;
++        }
++    }
++    LeaveCriticalSection( &impl->cs );
++
++    if (to_release) IUnknown_Release( to_release );
++    return S_OK;
++}
++
++static IUnknown **media_player_snapshot_events( struct media_player *impl, enum media_player_event_kind kind,
++                                                size_t *out_count )
++{
++    struct media_player_event_entry *entry;
++    IUnknown **handlers = NULL;
++    size_t count = 0, i = 0;
++
++    EnterCriticalSection( &impl->cs );
++    LIST_FOR_EACH_ENTRY( entry, &impl->event_handlers, struct media_player_event_entry, entry )
++        if (entry->kind == kind) count++;
++
++    if (count && (handlers = malloc( count * sizeof( *handlers ) )))
++    {
++        LIST_FOR_EACH_ENTRY( entry, &impl->event_handlers, struct media_player_event_entry, entry )
++        {
++            if (entry->kind == kind)
++            {
++                IUnknown_AddRef( entry->handler );
++                handlers[i++] = entry->handler;
++            }
++        }
++    }
++    LeaveCriticalSection( &impl->cs );
++
++    *out_count = handlers ? i : 0;
++    return handlers;
++}
++
++static void media_player_notify_inspectable( struct media_player *impl, enum media_player_event_kind kind )
++{
++    size_t count = 0, i;
++    IUnknown **handlers = media_player_snapshot_events( impl, kind, &count );
++
++    for (i = 0; i < count; i++)
++    {
++        ITypedEventHandler_MediaPlayer_IInspectable *cb = (ITypedEventHandler_MediaPlayer_IInspectable *)handlers[i];
++        ITypedEventHandler_MediaPlayer_IInspectable_Invoke( cb, &impl->IMediaPlayer_iface, NULL );
++        IUnknown_Release( handlers[i] );
++    }
++    free( handlers );
++}
++
++static void media_player_notify_rate_changed( struct media_player *impl, DOUBLE new_rate )
++{
++    size_t count = 0, i;
++    IUnknown **handlers = media_player_snapshot_events( impl, EVENT_RATE_CHANGED, &count );
++    struct media_player_rate_changed_args *args;
++
++    if (!count)
++    {
++        free( handlers );
++        return;
++    }
++
++    args = calloc( 1, sizeof( *args ) );
++    if (args)
++    {
++        args->IMediaPlayerRateChangedEventArgs_iface.lpVtbl = &rate_changed_args_vtbl;
++        args->ref = 1;
++        args->new_rate = new_rate;
++    }
++
++    for (i = 0; i < count; i++)
++    {
++        if (args)
++        {
++            ITypedEventHandler_MediaPlayer_MediaPlayerRateChangedEventArgs *cb =
++                (ITypedEventHandler_MediaPlayer_MediaPlayerRateChangedEventArgs *)handlers[i];
++            ITypedEventHandler_MediaPlayer_MediaPlayerRateChangedEventArgs_Invoke(
++                cb, &impl->IMediaPlayer_iface, &args->IMediaPlayerRateChangedEventArgs_iface );
++        }
++        IUnknown_Release( handlers[i] );
++    }
++    if (args) IMediaPlayerRateChangedEventArgs_Release( &args->IMediaPlayerRateChangedEventArgs_iface );
++    free( handlers );
++}
++
+ static inline struct media_player *impl_from_IMediaPlayer( IMediaPlayer *iface )
+ {
+     return CONTAINING_RECORD( iface, struct media_player, IMediaPlayer_iface );
+@@ -84,6 +321,15 @@ static ULONG WINAPI media_player_Release( IMediaPlayer *iface )
+ 
+     if (!ref)
+     {
++        struct media_player_event_entry *entry, *next;
++
++        LIST_FOR_EACH_ENTRY_SAFE( entry, next, &impl->event_handlers, struct media_player_event_entry, entry )
++        {
++            list_remove( &entry->entry );
++            IUnknown_Release( entry->handler );
++            free( entry );
++        }
++        DeleteCriticalSection( &impl->cs );
+         ISystemMediaTransportControls_Release( impl->controls );
+         DestroyWindow( impl->window );
+         free( impl );
+@@ -111,14 +357,23 @@ static HRESULT WINAPI media_player_GetTrustLevel( IMediaPlayer *iface, TrustLeve
+ 
+ static HRESULT WINAPI media_player_get_AutoPlay( IMediaPlayer *iface, boolean *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p\n", iface, value );
++
++    if (!value) return E_POINTER;
++    *value = impl->auto_play;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_put_AutoPlay( IMediaPlayer *iface, boolean value )
+ {
+-    FIXME( "iface %p, value %d stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %d\n", iface, value );
++
++    impl->auto_play = value;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_get_NaturalDuration( IMediaPlayer *iface, TimeSpan *value )
+@@ -165,14 +420,23 @@ static HRESULT WINAPI media_player_get_CanPause( IMediaPlayer *iface, boolean *v
+ 
+ static HRESULT WINAPI media_player_get_IsLoopingEnabled( IMediaPlayer *iface, boolean *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p\n", iface, value );
++
++    if (!value) return E_POINTER;
++    *value = impl->looping;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_put_IsLoopingEnabled( IMediaPlayer *iface, boolean value )
+ {
+-    FIXME( "iface %p, value %d stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %d\n", iface, value );
++
++    impl->looping = value;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_get_IsProtected( IMediaPlayer *iface, boolean *value )
+@@ -183,38 +447,76 @@ static HRESULT WINAPI media_player_get_IsProtected( IMediaPlayer *iface, boolean
+ 
+ static HRESULT WINAPI media_player_get_IsMuted( IMediaPlayer *iface, boolean *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p\n", iface, value );
++
++    if (!value) return E_POINTER;
++    *value = impl->muted;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_put_IsMuted( IMediaPlayer *iface, boolean value )
+ {
+-    FIXME( "iface %p, value %d stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %d\n", iface, value );
++
++    impl->muted = value;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_get_PlaybackRate( IMediaPlayer *iface, DOUBLE *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p\n", iface, value );
++
++    if (!value) return E_POINTER;
++    *value = impl->rate;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_put_PlaybackRate( IMediaPlayer *iface, DOUBLE value )
+ {
+-    FIXME( "iface %p, value %lf stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++    DOUBLE old_rate;
++
++    TRACE( "iface %p, value %f\n", iface, value );
++
++    old_rate = impl->rate;
++    impl->rate = value;
++    if (old_rate != value)
++        media_player_notify_rate_changed( impl, value );
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_get_Volume( IMediaPlayer *iface, DOUBLE *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p\n", iface, value );
++
++    if (!value) return E_POINTER;
++    *value = impl->volume;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_put_Volume( IMediaPlayer *iface, DOUBLE value )
+ {
+-    FIXME( "iface %p, value %lf stub!\n", iface, value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++    DOUBLE old_volume;
++
++    TRACE( "iface %p, value %f\n", iface, value );
++
++    if (!(value >= 0.0 && value <= 1.0))
++        return S_OK;
++
++    old_volume = impl->volume;
++    impl->volume = value;
++    if (old_volume != value)
++        media_player_notify_inspectable( impl, EVENT_VOLUME_CHANGED );
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI media_player_get_PlaybackMediaMarkers( IMediaPlayer *iface, IPlaybackMediaMarkerSequence **value )
+@@ -225,126 +527,186 @@ static HRESULT WINAPI media_player_get_PlaybackMediaMarkers( IMediaPlayer *iface
+ 
+ static HRESULT WINAPI media_player_add_MediaOpened( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_IInspectable *value, EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_MEDIA_OPENED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_MediaOpened( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_MEDIA_OPENED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_MediaEnded( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_IInspectable *value, EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_MEDIA_ENDED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_MediaEnded( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_MEDIA_ENDED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_MediaFailed( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_MediaPlayerFailedEventArgs *value,
+                                                     EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_MEDIA_FAILED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_MediaFailed( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_MEDIA_FAILED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_CurrentStateChanged( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_IInspectable *value,
+                                                             EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_CURRENT_STATE_CHANGED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_CurrentStateChanged( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_CURRENT_STATE_CHANGED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_PlaybackMediaMarkerReached( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_PlaybackMediaMarkerReachedEventArgs *value,
+                                                                    EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_PLAYBACK_MEDIA_MARKER_REACHED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_PlaybackMediaMarkerReached( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_PLAYBACK_MEDIA_MARKER_REACHED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_MediaPlayerRateChanged( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_MediaPlayerRateChangedEventArgs *value,
+                                                                EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_RATE_CHANGED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_MediaPlayerRateChanged( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_RATE_CHANGED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_VolumeChanged( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_IInspectable *value, EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_VOLUME_CHANGED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_VolumeChanged( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_VOLUME_CHANGED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_SeekCompleted( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_IInspectable *value, EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_SEEK_COMPLETED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_SeekCompleted( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_SEEK_COMPLETED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_BufferingStarted( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_IInspectable *value, EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_BUFFERING_STARTED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_BufferingStarted( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_BUFFERING_STARTED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_add_BufferingEnded( IMediaPlayer *iface, ITypedEventHandler_MediaPlayer_IInspectable *value, EventRegistrationToken *token )
+ {
+-    FIXME( "iface %p, value %p, token %p stub!\n", iface, value, token );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, value %p, token %p\n", iface, value, token );
++
++    return media_player_add_event( impl, EVENT_BUFFERING_ENDED, (IUnknown *)value, token );
+ }
+ 
+ static HRESULT WINAPI media_player_remove_BufferingEnded( IMediaPlayer *iface, EventRegistrationToken token )
+ {
+-    FIXME( "iface %p, token %#I64x stub!\n", iface, token.value );
+-    return E_NOTIMPL;
++    struct media_player *impl = impl_from_IMediaPlayer( iface );
++
++    TRACE( "iface %p, token %#I64x\n", iface, token.value );
++
++    return media_player_remove_event( impl, EVENT_BUFFERING_ENDED, token );
+ }
+ 
+ static HRESULT WINAPI media_player_Play( IMediaPlayer *iface )
+@@ -591,6 +953,11 @@ static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInsp
+     impl->IMediaPlayer_iface.lpVtbl = &media_player_vtbl;
+     impl->IMediaPlayer2_iface.lpVtbl = &media_player2_vtbl;
+     impl->ref = 1;
++    InitializeCriticalSection( &impl->cs );
++    list_init( &impl->event_handlers );
++    impl->auto_play = TRUE;
++    impl->rate = 1.0;
++    impl->volume = 1.0;
+ 
+     *instance = (IInspectable *)&impl->IMediaPlayer_iface;
+     return S_OK;
