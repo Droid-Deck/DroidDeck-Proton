@@ -4,6 +4,11 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 
 ## 2026-11-24
 
+### User's go: merge to main and release 11-14.1 as Latest (2026-11-24 ~16:0x EST)
+- **User (verbatim):** "merge it to main and rebuild as a new release for users to get in app". DroidDeck 0.7.1 installs only non-prerelease releases, so this is a Latest release.
+- **Proof level at the go:** CI-green (build 45456261344, Verify tier 2 45456255095); device-tested on the Pocket FIT Elite: the app's upgrade path (11-12.8 replaced by 11-14.1, picks moved), DiRT Showdown runs with `droiddeck-esync: up and running.`, no crash; the first launch after the switch froze (cause not found, log capped), the second ran. Not tested: Battle.net, Burnout Paradise, an SD-card game other than DiRT, Death Stranding, Crash Bandicoot, D3D8 games, FMV games.
+- **Plan:** backup refs `refs/backup/20261124/main-before-11-14` (`6694bcfe`) and `refs/backup/20261124/ge-master-before-11-14` (`f85547f0`); `main` fast-forwarded to `rebase/11-14`, `ge-master` to GE-Proton11-14 `777d72b4`; tree must equal the tested `59009d6f` except PROGRESS_LOG.md; then build on main with publish=true, prerelease=false, compare_with DroidDeck-Proton-11-12.8; notes rewritten in the 11-12.1 layout.
+
 ### Elite device test 1: DiRT Showdown on 11-14.1 (user, 2026-11-24 15:46–15:50 EST)
 - **Upgrade path worked:** DroidDeck 0.7.1 moved the game to 11-14.1 and removed the `DroidDeck-Proton 11-12.8` folder on its own (only 11-14.1 left in compatibilitytools.d; backup kept). Session `files/logs/2026-11-24-01-steam`.
 - **Both launches on 11-14.1:** `Proton: 1795546643 DroidDeck-Proton-11-14.1`, `droiddeck-esync: up and running.` (tier 5 works), DXVK (per-game component v2.4.1-gplasync) created its swap chain. Few err lines (host name, tabtip, hid container id, openxr extensions; 64-bit wineopenxr.dll fails to load dxgi.dll c000007b in run 1). Android crash buffer empty; no Wine unhandled exception / page fault / stack overflow in the captured logs. Session stopped from the notification 15:50:20, Steam exit 0, session status 0. The two proton tracebacks end in KeyboardInterrupt = the game being closed (as on 11-03).
