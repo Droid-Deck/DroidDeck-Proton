@@ -1,0 +1,241 @@
+diff --git a/dlls/combase/apartment.c b/dlls/combase/apartment.c
+index ce1fc72b..ee324b7e 100644
+--- a/dlls/combase/apartment.c
++++ b/dlls/combase/apartment.c
+@@ -517,6 +517,7 @@ void apartment_release(struct apartment *apt)
+         assert(list_empty(&apt->stubmgrs));
+ 
+         if (apt->filter) IMessageFilter_Release(apt->filter);
++        if (apt->context) IUnknown_Release((IUnknown *)apt->context);
+ 
+         /* free as many unused libraries as possible... */
+         apartment_freeunusedlibraries(apt, 0);
+@@ -1116,6 +1117,13 @@ static LRESULT CALLBACK apartment_wndproc(HWND hWnd, UINT msg, WPARAM wParam, LP
+         return 0;
+     case DM_HOSTOBJECT:
+         return apartment_hostobject(com_get_current_apt(), (const struct host_object_params *)lParam);
++    case DM_CONTEXTCALLBACK:
++    {
++        struct context_callback_params *cc = (struct context_callback_params *)lParam;
++        cc->hr = cc->callback(cc->param);
++        cc->executed = TRUE;
++        return 0;
++    }
+     default:
+         return DefWindowProcW(hWnd, msg, wParam, lParam);
+     }
+diff --git a/dlls/combase/combase.c b/dlls/combase/combase.c
+index 34a9a42d..5ff6e1a6 100644
+--- a/dlls/combase/combase.c
++++ b/dlls/combase/combase.c
+@@ -2443,6 +2443,8 @@ struct thread_context
+     IContextCallback IContextCallback_iface;
+     IObjContext IObjContext_iface;
+     LONG refcount;
++    BOOL multi_threaded;
++    DWORD tid;
+ };
+ 
+ static inline struct thread_context *impl_from_IComThreadingInfo(IComThreadingInfo *iface)
+@@ -2588,12 +2590,87 @@ static ULONG WINAPI thread_context_callback_Release(IContextCallback *iface)
+     return IComThreadingInfo_Release(&context->IComThreadingInfo_iface);
+ }
+ 
++static DWORD WINAPI mta_context_callback_proc(void *arg)
++{
++    struct context_callback_params *cc = arg;
++    HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
++
++    cc->hr = cc->callback(cc->param);
++    cc->executed = TRUE;
++    if (SUCCEEDED(init_hr))
++        CoUninitialize();
++    SetEvent(cc->done_event);
++    return 0;
++}
++
+ static HRESULT WINAPI thread_context_callback_ContextCallback(IContextCallback *iface,
+         PFNCONTEXTCALL callback, ComCallData *param, REFIID riid, int method, IUnknown *punk)
+ {
+-    FIXME("%p, %p, %p, %s, %d, %p\n", iface, callback, param, debugstr_guid(riid), method, punk);
++    struct thread_context *context = impl_from_IContextCallback(iface);
++    struct apartment *cur;
+ 
+-    return E_NOTIMPL;
++    TRACE("%p, %p, %p, %s, %d, %p (mt=%d tid=%#lx)\n", iface, callback, param,
++          debugstr_guid(riid), method, punk, context->multi_threaded, context->tid);
++
++    if (!callback)
++        return E_INVALIDARG;
++
++    if (context->multi_threaded)
++    {
++        cur = com_get_current_apt();
++        if (!cur || cur->multi_threaded)
++            return callback(param);
++
++        /* Cross-apartment STA -> MTA call: execute on an MTA worker thread while pumping STA. */
++        {
++            struct context_callback_params cc;
++            DWORD idx = 0;
++
++            memset(&cc, 0, sizeof(cc));
++            cc.callback = (HRESULT (WINAPI *)(void *))callback;
++            cc.param = param;
++            cc.hr = E_FAIL;
++            cc.done_event = CreateEventW(NULL, TRUE, FALSE, NULL);
++            if (!cc.done_event)
++                return E_OUTOFMEMORY;
++            if (!QueueUserWorkItem(mta_context_callback_proc, &cc, WT_EXECUTEDEFAULT))
++            {
++                CloseHandle(cc.done_event);
++                return HRESULT_FROM_WIN32(GetLastError());
++            }
++            CoWaitForMultipleHandles(0, INFINITE, 1, &cc.done_event, &idx);
++            CloseHandle(cc.done_event);
++            return cc.executed ? cc.hr : E_FAIL;
++        }
++    }
++
++    if (context->tid == GetCurrentThreadId())
++        return callback(param);
++
++    {
++        struct apartment *target = apartment_findfromtid(context->tid);
++        struct context_callback_params cc;
++        HWND win;
++
++        if (!target || target->being_destroyed)
++        {
++            if (target) apartment_release(target);
++            return RPC_E_DISCONNECTED;
++        }
++        win = apartment_getwindow(target);
++        if (!win)
++        {
++            apartment_release(target);
++            return RPC_E_DISCONNECTED;
++        }
++        memset(&cc, 0, sizeof(cc));
++        cc.callback = (HRESULT (WINAPI *)(void *))callback;
++        cc.param = param;
++        cc.hr = RPC_E_DISCONNECTED;
++        SendMessageW(win, DM_CONTEXTCALLBACK, 0, (LPARAM)&cc);
++        apartment_release(target);
++        return cc.executed ? cc.hr : RPC_E_DISCONNECTED;
++    }
+ }
+ 
+ static const IContextCallbackVtbl thread_context_callback_vtbl =
+@@ -2706,9 +2783,30 @@ static const IObjContextVtbl thread_object_context_vtbl =
+ /***********************************************************************
+  *           CoGetContextToken    (combase.@)
+  */
++static IObjContext *create_thread_context(BOOL multi_threaded, DWORD tid)
++{
++    struct thread_context *context;
++
++    context = calloc(1, sizeof(*context));
++    if (!context)
++        return NULL;
++
++    context->IComThreadingInfo_iface.lpVtbl = &thread_context_info_vtbl;
++    context->IContextCallback_iface.lpVtbl = &thread_context_callback_vtbl;
++    context->IObjContext_iface.lpVtbl = &thread_object_context_vtbl;
++    /* Context token does not take a reference, it's always zero until the
++       interface is explicitly requested with CoGetObjectContext(). */
++    context->refcount = 0;
++    context->multi_threaded = multi_threaded;
++    context->tid = tid;
++
++    return &context->IObjContext_iface;
++}
++
+ HRESULT WINAPI CoGetContextToken(ULONG_PTR *token)
+ {
+     struct tlsdata *tlsdata;
++    struct apartment *apt;
+     HRESULT hr;
+ 
+     TRACE("%p\n", token);
+@@ -2725,23 +2823,38 @@ HRESULT WINAPI CoGetContextToken(ULONG_PTR *token)
+     if (!token)
+         return E_POINTER;
+ 
+-    if (!tlsdata->context_token)
++    /* All threads in the multithreaded apartment share one context. */
++    if ((apt = apartment_get_current_or_mta()) && apt->multi_threaded)
+     {
+-        struct thread_context *context;
++        if (!apt->context)
++        {
++            IObjContext *context = create_thread_context(TRUE, 0);
+ 
+-        context = calloc(1, sizeof(*context));
+-        if (!context)
++            if (!context)
++            {
++                apartment_release(apt);
++                return E_OUTOFMEMORY;
++            }
++            if (InterlockedCompareExchangePointer((void **)&apt->context, context, NULL))
++                IObjContext_Release(context);
++        }
++        *token = (ULONG_PTR)apt->context;
++        apartment_release(apt);
++        TRACE("context_token %p\n", (void *)*token);
++        return S_OK;
++    }
++    if (apt)
++    {
++        apartment_createwindowifneeded(apt);
++        if (!tlsdata->context_token && !(tlsdata->context_token = create_thread_context(FALSE, apt->tid)))
++        {
++            apartment_release(apt);
+             return E_OUTOFMEMORY;
+-
+-        context->IComThreadingInfo_iface.lpVtbl = &thread_context_info_vtbl;
+-        context->IContextCallback_iface.lpVtbl = &thread_context_callback_vtbl;
+-        context->IObjContext_iface.lpVtbl = &thread_object_context_vtbl;
+-        /* Context token does not take a reference, it's always zero until the
+-           interface is explicitly requested with CoGetObjectContext(). */
+-        context->refcount = 0;
+-
+-        tlsdata->context_token = &context->IObjContext_iface;
++        }
++        apartment_release(apt);
+     }
++    else if (!tlsdata->context_token && !(tlsdata->context_token = create_thread_context(TRUE, 0)))
++        return E_OUTOFMEMORY;
+ 
+     *token = (ULONG_PTR)tlsdata->context_token;
+     TRACE("context_token %p\n", tlsdata->context_token);
+diff --git a/dlls/combase/combase_private.h b/dlls/combase/combase_private.h
+index ca79356e..5e6b672f 100644
+--- a/dlls/combase/combase_private.h
++++ b/dlls/combase/combase_private.h
+@@ -51,6 +51,7 @@ struct apartment
+ 
+     /* MTA-only */
+     struct list usage_cookies; /* Used for refcount control with CoIncrementMTAUsage()/CoDecrementMTAUsage(). */
++    IObjContext *context;      /* Context shared by every thread in the apartment. */
+ };
+ 
+ HRESULT open_key_for_clsid(REFCLSID clsid, const WCHAR *keyname, REGSAM access, HKEY *subkey);
+@@ -59,6 +60,16 @@ HRESULT open_appidkey_from_clsid(REFCLSID clsid, REGSAM access, HKEY *subkey);
+ /* DCOM messages used by the apartment window (not compatible with native) */
+ #define DM_EXECUTERPC   (WM_USER + 0) /* WPARAM = 0, LPARAM = (struct dispatch_params *) */
+ #define DM_HOSTOBJECT   (WM_USER + 1) /* WPARAM = 0, LPARAM = (struct host_object_params *) */
++#define DM_CONTEXTCALLBACK (WM_USER + 2) /* WPARAM = 0, LPARAM = (struct context_callback_params *) */
++
++struct context_callback_params
++{
++    HRESULT (WINAPI *callback)(void *);
++    void *param;
++    HRESULT hr;
++    BOOL executed;
++    HANDLE done_event;
++};
+ 
+ #define CHARS_IN_GUID 39
+ 

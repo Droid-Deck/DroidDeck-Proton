@@ -1,0 +1,51 @@
+diff --git a/src/dxgi/dxgi_factory.cpp b/src/dxgi/dxgi_factory.cpp
+index d89409e..60b24e9 100644
+--- a/src/dxgi/dxgi_factory.cpp
++++ b/src/dxgi/dxgi_factory.cpp
+@@ -7,6 +7,16 @@
+ 
+ #include "../util/util_singleton.h"
+ 
++MIDL_INTERFACE("45d64a29-a63e-4cb6-b498-5781d298cb4f")
++ICoreWindowInterop : public IUnknown {
++  virtual HRESULT STDMETHODCALLTYPE get_WindowHandle(HWND* hWnd) = 0;
++  virtual HRESULT STDMETHODCALLTYPE put_MessageHandled(unsigned char Value) = 0;
++};
++
++#ifndef _MSC_VER
++__CRT_UUID_DECL(ICoreWindowInterop, 0x45d64a29,0xa63e,0x4cb6,0xb4,0x98,0x57,0x81,0xd2,0x98,0xcb,0x4f);
++#endif
++
+ namespace dxvk {
+ 
+   static Singleton<DxvkInstance>   g_dxvkInstance;
+@@ -273,9 +283,26 @@ namespace dxvk {
+           IDXGIOutput*          pRestrictToOutput,
+           IDXGISwapChain1**     ppSwapChain) {
+     InitReturnPtr(ppSwapChain);
+-    
+-    Logger::err("DxgiFactory::CreateSwapChainForCoreWindow: Not implemented");
+-    return E_NOTIMPL;
++
++    if (!ppSwapChain || !pDesc || !pWindow || !pDevice)
++      return DXGI_ERROR_INVALID_CALL;
++
++    // Core windows only accept flip-model swap chains
++    if (pDesc->SwapEffect != DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL
++     && pDesc->SwapEffect != DXGI_SWAP_EFFECT_FLIP_DISCARD)
++      return DXGI_ERROR_INVALID_CALL;
++
++    Com<ICoreWindowInterop> interop;
++    HWND hWnd = nullptr;
++
++    if (FAILED(pWindow->QueryInterface(__uuidof(ICoreWindowInterop), reinterpret_cast<void**>(&interop)))
++     || FAILED(interop->get_WindowHandle(&hWnd)) || !hWnd) {
++      Logger::err("DxgiFactory::CreateSwapChainForCoreWindow: No window handle");
++      return DXGI_ERROR_INVALID_CALL;
++    }
++
++    return CreateSwapChainBase(pDevice, hWnd,
++      pDesc, nullptr, pRestrictToOutput, ppSwapChain);
+   }
+   
+   

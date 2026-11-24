@@ -1,0 +1,44 @@
+diff --git a/dlls/windows.gaming.input/manager.c b/dlls/windows.gaming.input/manager.c
+index d54b01d9..32770375 100644
+--- a/dlls/windows.gaming.input/manager.c
++++ b/dlls/windows.gaming.input/manager.c
+@@ -327,8 +327,11 @@ statics_RegisterCustomFactoryForGipInterface( IGameControllerFactoryManagerStati
+                                               ICustomGameControllerFactory *factory,
+                                               GUID interface_id )
+ {
+-    FIXME( "iface %p, factory %p, interface_id %s stub!\n", iface, factory, debugstr_guid(&interface_id) );
+-    return E_NOTIMPL;
++    FIXME( "iface %p, factory %p, interface_id %s semi-stub!\n", iface, factory, debugstr_guid(&interface_id) );
++
++    /* GIP devices are not enumerated, so no controller is ever offered to this factory. */
++    if (!factory) return E_INVALIDARG;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI
+@@ -336,8 +339,10 @@ statics_RegisterCustomFactoryForHardwareId( IGameControllerFactoryManagerStatics
+                                             ICustomGameControllerFactory *factory,
+                                             UINT16 vendor_id, UINT16 product_id )
+ {
+-    FIXME( "iface %p, factory %p, vendor_id %u, product_id %u stub!\n", iface, factory, vendor_id, product_id );
+-    return E_NOTIMPL;
++    FIXME( "iface %p, factory %p, vendor_id %u, product_id %u semi-stub!\n", iface, factory, vendor_id, product_id );
++
++    if (!factory) return E_INVALIDARG;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI
+@@ -345,8 +350,10 @@ statics_RegisterCustomFactoryForXusbType( IGameControllerFactoryManagerStatics *
+                                           ICustomGameControllerFactory *factory,
+                                           XusbDeviceType type, XusbDeviceSubtype subtype )
+ {
+-    FIXME( "iface %p, factory %p, type %d, subtype %d stub!\n", iface, factory, type, subtype );
+-    return E_NOTIMPL;
++    FIXME( "iface %p, factory %p, type %d, subtype %d semi-stub!\n", iface, factory, type, subtype );
++
++    if (!factory) return E_INVALIDARG;
++    return S_OK;
+ }
+ 
+ static const struct IGameControllerFactoryManagerStaticsVtbl statics_vtbl =

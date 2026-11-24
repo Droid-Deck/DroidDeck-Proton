@@ -1,0 +1,74 @@
+diff --git a/dlls/windows.ui/uisettings.c b/dlls/windows.ui/uisettings.c
+index c52bff8b..94a42898 100644
+--- a/dlls/windows.ui/uisettings.c
++++ b/dlls/windows.ui/uisettings.c
+@@ -163,8 +163,14 @@ static HRESULT WINAPI uisettings_get_MessageDuration( IUISettings *iface, UINT32
+ 
+ static HRESULT WINAPI uisettings_get_AnimationsEnabled( IUISettings *iface, boolean *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    BOOL enabled = TRUE;
++
++    TRACE( "iface %p, value %p.\n", iface, value );
++
++    if (!value) return E_POINTER;
++    SystemParametersInfoW( SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0 );
++    *value = !!enabled;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI uisettings_get_CaretBrowsingEnabled( IUISettings *iface, boolean *value )
+@@ -175,26 +181,44 @@ static HRESULT WINAPI uisettings_get_CaretBrowsingEnabled( IUISettings *iface, b
+ 
+ static HRESULT WINAPI uisettings_get_CaretBlinkRate( IUISettings *iface, UINT32 *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    TRACE( "iface %p, value %p.\n", iface, value );
++
++    if (!value) return E_POINTER;
++    *value = GetCaretBlinkTime();
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI uisettings_get_CaretWidth( IUISettings *iface, UINT32 *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    DWORD width = 1;
++
++    TRACE( "iface %p, value %p.\n", iface, value );
++
++    if (!value) return E_POINTER;
++    SystemParametersInfoW( SPI_GETCARETWIDTH, 0, &width, 0 );
++    *value = width;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI uisettings_get_DoubleClickTime( IUISettings *iface, UINT32 *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    TRACE( "iface %p, value %p.\n", iface, value );
++
++    if (!value) return E_POINTER;
++    *value = GetDoubleClickTime();
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI uisettings_get_MouseHoverTime( IUISettings *iface, UINT32 *value )
+ {
+-    FIXME( "iface %p, value %p stub!\n", iface, value );
+-    return E_NOTIMPL;
++    UINT hover = 400;
++
++    TRACE( "iface %p, value %p.\n", iface, value );
++
++    if (!value) return E_POINTER;
++    SystemParametersInfoW( SPI_GETMOUSEHOVERTIME, 0, &hover, 0 );
++    *value = hover;
++    return S_OK;
+ }
+ 
+ static HRESULT WINAPI uisettings_UIElementColor( IUISettings *iface, enum UIElementType element, struct Color *value )

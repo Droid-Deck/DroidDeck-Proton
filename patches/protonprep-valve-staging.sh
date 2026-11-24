@@ -39,6 +39,9 @@ apply_all_in_dir() {
     apply_patch "../patches/dxvk/dxgi-auto-detect-hdr.patch"
     # StarCraft II: avoid GPU hangs with D3D9 constant buffer streaming on Navi 10 (#790, #845).
     apply_patch "../patches/dxvk/starcraft2-disable-constant-buffer-streaming-on-navi10.patch"
+    # UWP titles (CoreWindow swapchains and Forza Horizon 4 hardware profiler).
+    apply_patch "../patches/dxvk/dxgi-create-swapchain-for-core-window.patch"
+    apply_patch "../patches/dxvk/forza-horizon-4-dummy-composition-swapchain.patch"
     popd
 
     pushd d7vk
@@ -684,6 +687,14 @@ apply_all_in_dir() {
     # https://github.com/ValveSoftware/Proton/issues/7486#issuecomment-6594771550
     echo "WINE: -PENDING- ntdll: let a thread killed during its startup exit instead of hanging (Helldivers 2 thread growth)"
     apply_patch "../patches/wine-hotfixes/pending/ntdll-dont-keep-reply-pipe-open-during-thread-init.patch"
+
+    # UWP app-model support: MTA context sharing/callbacks, IXMLHTTPRequest2, and WinRT runtime stubs.
+    echo "WINE: -PENDING- UWP app-model and WinRT runtime support"
+    apply_patch "../patches/wine-hotfixes/pending/combase-share-one-context-across-the-mta.patch"
+    apply_patch "../patches/wine-hotfixes/pending/msxml3-implement-xmlhttprequest2-features.patch"
+    apply_patch "../patches/wine-hotfixes/pending/windows.gaming.input-accept-custom-controller-factories.patch"
+    apply_patch "../patches/wine-hotfixes/pending/windows.media.playback.mediaplayer-register-events-and-keep-properties.patch"
+    apply_patch "../patches/wine-hotfixes/pending/windows.ui-implement-uisettings-system-parameters.patch"
 
     echo "WINE: RUN AUTOCONF TOOLS/MAKE_REQUESTS"
     autoreconf -f

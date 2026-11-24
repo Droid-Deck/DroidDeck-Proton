@@ -1,0 +1,15 @@
+--- a/src/util/config/config.cpp
++++ b/src/util/config/config.cpp
+@@ -60,6 +60,12 @@
+     { R"(\\Anno117\.exe$)", {{
+       { "dxgi.enableDummyCompositionSwapchain", "True" }
+     }} },
++    /* Forza Horizon 4 (Microsoft Store): its     *
++     * hardware profiler renders to a composition *
++     * swapchain and aborts if creation fails     */
++    { R"(\\ForzaHorizon4\.exe$)", {{
++      { "dxgi.enableDummyCompositionSwapchain", "True" }
++    }} },
+ 
+     /**********************************************/
+     /* D3D11 GAMES                                */
