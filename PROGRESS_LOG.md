@@ -4,6 +4,13 @@ Newest first. Device = AYANEO Pocket FIT-class Android handheld running DroidDec
 
 ## 2026-11-24
 
+### 11-14.1 RELEASED (Latest, user's go)
+- **Merge:** backup refs `refs/backup/20261124/main-before-11-14` (`6694bcfe`) and `refs/backup/20261124/ge-master-before-11-14` (`f85547f0`) pushed and checked first; `main` fast-forwarded `6694bcfe` → `dcba8b73` (= `rebase/11-14`; tree equal to the tested `59009d6f` except PROGRESS_LOG.md), `ge-master` → GE-Proton11-14 `777d72b4`.
+- **CI on main:** Verify wine tier 2 45486515190 green; build 45486565583 green (headSha `dcba8b73`), Release job published `DroidDeck-Proton-11-14.1` 2026-11-24 16:59 EST: not draft, not prerelease, `/releases/latest` = 11-14.1, tag → `dcba8b734f891b9e6c94d68ff917008f52f8a7c1` (= built commit), 3 assets (tar.gz 658,094,068 B, .sha512sum, build-info.json). Against 11-12.8: 9690 → 9728 entries, ntdll exports 291 = 291. `ntdll.so` `ffbe16a7…` and `wineserver` `0a8c9aef…` equal the device-tested branch build.
+- **Notes:** rewritten by hand in the 11-11.3–11-12.1 layout (summary, New in 11-14.1, collapsed New in 11-12.8 … 11-11.3 with 11-12.1 and older copied from the 11-12.1 notes, What's inside, Install, Tested, Credits, generated pins and hashes). No @mentions.
+- **In app:** DroidDeck installs the newest non-prerelease DroidDeck-Proton by itself when idle on its home screen and moves games over (device-proven on the Elite with the branch build). The Elite keeps its hand-installed copy (same version name, same ntdll/wineserver).
+- **Open:** first-launch freeze in DiRT Showdown not explained; device tests left (Battle.net, Burnout Paradise, Death Stranding, Black Ops III, Crash Bandicoot, D3D8, FMV, SD-card games); 11-14.x ideas: d8vk/D7VK defaults, CachyOS PipeWire fixes, `--strip-all` + `.tar.xz` (download 658 → ~430 MB measured with xz), de-duplicated files (~100 MB).
+
 ### User's go: merge to main and release 11-14.1 as Latest (2026-11-24 ~16:0x EST)
 - **User (verbatim):** "merge it to main and rebuild as a new release for users to get in app". DroidDeck 0.7.1 installs only non-prerelease releases, so this is a Latest release.
 - **Proof level at the go:** CI-green (build 45456261344, Verify tier 2 45456255095); device-tested on the Pocket FIT Elite: the app's upgrade path (11-12.8 replaced by 11-14.1, picks moved), DiRT Showdown runs with `droiddeck-esync: up and running.`, no crash; the first launch after the switch froze (cause not found, log capped), the second ran. Not tested: Battle.net, Burnout Paradise, an SD-card game other than DiRT, Death Stranding, Crash Bandicoot, D3D8 games, FMV games.
