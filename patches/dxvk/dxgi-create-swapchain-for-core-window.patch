@@ -1,5 +1,5 @@
 diff --git a/src/dxgi/dxgi_factory.cpp b/src/dxgi/dxgi_factory.cpp
-index d89409e..60b24e9 100644
+index d89409e..d0af355 100644
 --- a/src/dxgi/dxgi_factory.cpp
 +++ b/src/dxgi/dxgi_factory.cpp
 @@ -7,6 +7,16 @@
@@ -45,7 +45,91 @@ index d89409e..60b24e9 100644
 +    }
 +
 +    return CreateSwapChainBase(pDevice, hWnd,
-+      pDesc, nullptr, pRestrictToOutput, ppSwapChain);
++      pDesc, nullptr, pRestrictToOutput, ppSwapChain, pWindow);
    }
    
    
+@@ -527,7 +554,8 @@ namespace dxvk {
+     const DXGI_SWAP_CHAIN_DESC1* pDesc,
+     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc,
+           IDXGIOutput*          pRestrictToOutput,
+-          IDXGISwapChain1**     ppSwapChain) {
++          IDXGISwapChain1**     ppSwapChain,
++          IUnknown*             pCoreWindow) {
+     // Make sure the back buffer size is not zero
+     DXGI_SWAP_CHAIN_DESC1 desc = *pDesc;
+ 
+@@ -567,7 +595,7 @@ namespace dxvk {
+         return hr;
+       }
+ 
+-      frontendSwapChain = new DxgiSwapChain(this, presenter.ptr(), hWnd, &desc, &fsDesc, pDevice);
++      frontendSwapChain = new DxgiSwapChain(this, presenter.ptr(), hWnd, &desc, &fsDesc, pDevice, pCoreWindow);
+     } else {
+       Logger::err("DXGI: CreateSwapChainForHwnd: Unsupported device type");
+       return DXGI_ERROR_UNSUPPORTED;
+diff --git a/src/dxgi/dxgi_factory.h b/src/dxgi/dxgi_factory.h
+index d6a6808..5235bc2 100644
+--- a/src/dxgi/dxgi_factory.h
++++ b/src/dxgi/dxgi_factory.h
+@@ -214,7 +214,8 @@ namespace dxvk {
+       const DXGI_SWAP_CHAIN_DESC1* pDesc,
+       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc,
+             IDXGIOutput*          pRestrictToOutput,
+-            IDXGISwapChain1**     ppSwapChain);
++            IDXGISwapChain1**     ppSwapChain,
++            IUnknown*             pCoreWindow = nullptr);
+   };
+   
+ }
+diff --git a/src/dxgi/dxgi_swapchain.cpp b/src/dxgi/dxgi_swapchain.cpp
+index efcc60b..66bd25f 100644
+--- a/src/dxgi/dxgi_swapchain.cpp
++++ b/src/dxgi/dxgi_swapchain.cpp
+@@ -14,9 +14,11 @@ namespace dxvk {
+           HWND                        hWnd,
+     const DXGI_SWAP_CHAIN_DESC1*      pDesc,
+     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC*  pFullscreenDesc,
+-          IUnknown*                   pDevice)
++          IUnknown*                   pDevice,
++          IUnknown*                   pCoreWindow)
+   : m_factory   (pFactory),
+     m_window    (hWnd),
++    m_coreWindow(pCoreWindow),
+     m_desc      (*pDesc),
+     m_descFs    (*pFullscreenDesc),
+     m_presentId (0u),
+@@ -317,7 +319,10 @@ namespace dxvk {
+           REFIID                    refiid,
+           void**                    ppUnk) {
+     InitReturnPtr(ppUnk);
+-    
++
++    if (m_coreWindow != nullptr)
++      return m_coreWindow->QueryInterface(refiid, ppUnk);
++
+     Logger::err("DxgiSwapChain::GetCoreWindow: Not implemented");
+     return E_NOTIMPL;
+   }
+diff --git a/src/dxgi/dxgi_swapchain.h b/src/dxgi/dxgi_swapchain.h
+index c6d9a0c..ad74610 100644
+--- a/src/dxgi/dxgi_swapchain.h
++++ b/src/dxgi/dxgi_swapchain.h
+@@ -31,7 +31,8 @@ namespace dxvk {
+             HWND                        hWnd,
+       const DXGI_SWAP_CHAIN_DESC1*      pDesc,
+       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC*  pFullscreenDesc,
+-            IUnknown*                   pDevice);
++            IUnknown*                   pDevice,
++            IUnknown*                   pCoreWindow = nullptr);
+     
+     ~DxgiSwapChain();
+     
+@@ -187,6 +188,7 @@ namespace dxvk {
+     Com<IDXGIVkMonitorInfo>         m_monitorInfo;
+     
+     HWND                            m_window;
++    Com<IUnknown>                   m_coreWindow;
+     DXGI_SWAP_CHAIN_DESC1           m_desc;
+     DXGI_SWAP_CHAIN_FULLSCREEN_DESC m_descFs;
+     UINT                            m_presentId;

@@ -1,5 +1,5 @@
 diff --git a/dlls/combase/apartment.c b/dlls/combase/apartment.c
-index ce1fc72b..ee324b7e 100644
+index ce1fc72..e6bd6c0 100644
 --- a/dlls/combase/apartment.c
 +++ b/dlls/combase/apartment.c
 @@ -517,6 +517,7 @@ void apartment_release(struct apartment *apt)
@@ -10,22 +10,25 @@ index ce1fc72b..ee324b7e 100644
  
          /* free as many unused libraries as possible... */
          apartment_freeunusedlibraries(apt, 0);
-@@ -1116,6 +1117,13 @@ static LRESULT CALLBACK apartment_wndproc(HWND hWnd, UINT msg, WPARAM wParam, LP
+@@ -1116,6 +1117,16 @@ static LRESULT CALLBACK apartment_wndproc(HWND hWnd, UINT msg, WPARAM wParam, LP
          return 0;
      case DM_HOSTOBJECT:
          return apartment_hostobject(com_get_current_apt(), (const struct host_object_params *)lParam);
 +    case DM_CONTEXTCALLBACK:
 +    {
 +        struct context_callback_params *cc = (struct context_callback_params *)lParam;
++        InterlockedExchange(&cc->started, 1);
 +        cc->hr = cc->callback(cc->param);
 +        cc->executed = TRUE;
++        if (cc->done_event)
++            SetEvent(cc->done_event);
 +        return 0;
 +    }
      default:
          return DefWindowProcW(hWnd, msg, wParam, lParam);
      }
 diff --git a/dlls/combase/combase.c b/dlls/combase/combase.c
-index 34a9a42d..5ff6e1a6 100644
+index 34a9a42..df2447a 100644
 --- a/dlls/combase/combase.c
 +++ b/dlls/combase/combase.c
 @@ -2443,6 +2443,8 @@ struct thread_context
@@ -37,7 +40,7 @@ index 34a9a42d..5ff6e1a6 100644
  };
  
  static inline struct thread_context *impl_from_IComThreadingInfo(IComThreadingInfo *iface)
-@@ -2588,12 +2590,87 @@ static ULONG WINAPI thread_context_callback_Release(IContextCallback *iface)
+@@ -2588,12 +2590,106 @@ static ULONG WINAPI thread_context_callback_Release(IContextCallback *iface)
      return IComThreadingInfo_Release(&context->IComThreadingInfo_iface);
  }
  
@@ -46,10 +49,17 @@ index 34a9a42d..5ff6e1a6 100644
 +    struct context_callback_params *cc = arg;
 +    HRESULT init_hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
 +
++    if (FAILED(init_hr))
++    {
++        cc->hr = init_hr;
++        cc->executed = TRUE;
++        SetEvent(cc->done_event);
++        return 0;
++    }
++
 +    cc->hr = cc->callback(cc->param);
 +    cc->executed = TRUE;
-+    if (SUCCEEDED(init_hr))
-+        CoUninitialize();
++    CoUninitialize();
 +    SetEvent(cc->done_event);
 +    return 0;
 +}
@@ -80,7 +90,7 @@ index 34a9a42d..5ff6e1a6 100644
 +            DWORD idx = 0;
 +
 +            memset(&cc, 0, sizeof(cc));
-+            cc.callback = (HRESULT (WINAPI *)(void *))callback;
++            cc.callback = callback;
 +            cc.param = param;
 +            cc.hr = E_FAIL;
 +            cc.done_event = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -117,17 +127,29 @@ index 34a9a42d..5ff6e1a6 100644
 +            return RPC_E_DISCONNECTED;
 +        }
 +        memset(&cc, 0, sizeof(cc));
-+        cc.callback = (HRESULT (WINAPI *)(void *))callback;
++        cc.callback = callback;
 +        cc.param = param;
 +        cc.hr = RPC_E_DISCONNECTED;
++        cc.done_event = CreateEventW(NULL, TRUE, FALSE, NULL);
++        if (!cc.done_event)
++        {
++            apartment_release(target);
++            return E_OUTOFMEMORY;
++        }
 +        SendMessageW(win, DM_CONTEXTCALLBACK, 0, (LPARAM)&cc);
++        if (InterlockedCompareExchange(&cc.started, 0, 0) && !cc.executed)
++        {
++            DWORD idx = 0;
++            CoWaitForMultipleHandles(0, INFINITE, 1, &cc.done_event, &idx);
++        }
++        CloseHandle(cc.done_event);
 +        apartment_release(target);
 +        return cc.executed ? cc.hr : RPC_E_DISCONNECTED;
 +    }
  }
  
  static const IContextCallbackVtbl thread_context_callback_vtbl =
-@@ -2706,9 +2783,30 @@ static const IObjContextVtbl thread_object_context_vtbl =
+@@ -2706,9 +2802,30 @@ static const IObjContextVtbl thread_object_context_vtbl =
  /***********************************************************************
   *           CoGetContextToken    (combase.@)
   */
@@ -158,7 +180,7 @@ index 34a9a42d..5ff6e1a6 100644
      HRESULT hr;
  
      TRACE("%p\n", token);
-@@ -2725,23 +2823,38 @@ HRESULT WINAPI CoGetContextToken(ULONG_PTR *token)
+@@ -2725,23 +2842,43 @@ HRESULT WINAPI CoGetContextToken(ULONG_PTR *token)
      if (!token)
          return E_POINTER;
  
@@ -188,7 +210,12 @@ index 34a9a42d..5ff6e1a6 100644
 +    }
 +    if (apt)
 +    {
-+        apartment_createwindowifneeded(apt);
++        hr = apartment_createwindowifneeded(apt);
++        if (FAILED(hr))
++        {
++            apartment_release(apt);
++            return hr;
++        }
 +        if (!tlsdata->context_token && !(tlsdata->context_token = create_thread_context(FALSE, apt->tid)))
 +        {
 +            apartment_release(apt);
@@ -211,10 +238,18 @@ index 34a9a42d..5ff6e1a6 100644
      *token = (ULONG_PTR)tlsdata->context_token;
      TRACE("context_token %p\n", tlsdata->context_token);
 diff --git a/dlls/combase/combase_private.h b/dlls/combase/combase_private.h
-index ca79356e..5e6b672f 100644
+index ca79356..e20b926 100644
 --- a/dlls/combase/combase_private.h
 +++ b/dlls/combase/combase_private.h
-@@ -51,6 +51,7 @@ struct apartment
+@@ -15,6 +15,7 @@
+  */
+ 
+ #include "winternl.h"
++#include "ctxtcall.h"
+ #include "wine/orpc.h"
+ 
+ #include "wine/list.h"
+@@ -51,6 +52,7 @@ struct apartment
  
      /* MTA-only */
      struct list usage_cookies; /* Used for refcount control with CoIncrementMTAUsage()/CoDecrementMTAUsage(). */
@@ -222,7 +257,7 @@ index ca79356e..5e6b672f 100644
  };
  
  HRESULT open_key_for_clsid(REFCLSID clsid, const WCHAR *keyname, REGSAM access, HKEY *subkey);
-@@ -59,6 +60,16 @@ HRESULT open_appidkey_from_clsid(REFCLSID clsid, REGSAM access, HKEY *subkey);
+@@ -59,6 +61,17 @@ HRESULT open_appidkey_from_clsid(REFCLSID clsid, REGSAM access, HKEY *subkey);
  /* DCOM messages used by the apartment window (not compatible with native) */
  #define DM_EXECUTERPC   (WM_USER + 0) /* WPARAM = 0, LPARAM = (struct dispatch_params *) */
  #define DM_HOSTOBJECT   (WM_USER + 1) /* WPARAM = 0, LPARAM = (struct host_object_params *) */
@@ -230,9 +265,10 @@ index ca79356e..5e6b672f 100644
 +
 +struct context_callback_params
 +{
-+    HRESULT (WINAPI *callback)(void *);
-+    void *param;
++    PFNCONTEXTCALL callback;
++    ComCallData *param;
 +    HRESULT hr;
++    LONG started;
 +    BOOL executed;
 +    HANDLE done_event;
 +};

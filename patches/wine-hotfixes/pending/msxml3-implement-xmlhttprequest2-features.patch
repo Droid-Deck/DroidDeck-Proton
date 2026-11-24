@@ -1,5 +1,5 @@
 diff --git a/dlls/msxml3/httprequest.c b/dlls/msxml3/httprequest.c
-index 7dcc31ec..30fe225f 100644
+index 7dcc31e..b04d34d 100644
 --- a/dlls/msxml3/httprequest.c
 +++ b/dlls/msxml3/httprequest.c
 @@ -471,6 +471,21 @@ static ULONG WINAPI BSCHttpNegotiate_Release(IHttpNegotiate *iface)
@@ -333,7 +333,7 @@ index 7dcc31ec..30fe225f 100644
          SysFreeString(status_str);
  
          if (This->response_body) ISequentialStream_Release(This->response_body);
-@@ -2582,14 +2673,51 @@ static HRESULT WINAPI xml_http_request_2_IDispatch_Invoke(IDispatch *iface, DISP
+@@ -2582,14 +2673,62 @@ static HRESULT WINAPI xml_http_request_2_IDispatch_Invoke(IDispatch *iface, DISP
          if (FAILED(hr = httprequest_get_responseStream(&This->req, &body_v)) ||
              FAILED(hr = IUnknown_QueryInterface(V_UNKNOWN(&body_v), &IID_ISequentialStream, (void **)&This->response_body)))
          {
@@ -377,6 +377,17 @@ index 7dcc31ec..30fe225f 100644
 +                }
 +                if (read_hr == S_FALSE || !read) break;
 +            }
++            {
++                ULONG written = 0;
++                hr = ISequentialStream_Write(This->custom_response_stream, buf, 0, &written);
++                if (FAILED(hr))
++                {
++                    WARN("failed to finalize custom response stream, error %#lx\n", hr);
++                    IXMLHTTPRequest2Callback_OnError(This->callback, xhr2_iface, hr);
++                    IXMLHTTPRequest2Callback_Release(This->callback);
++                    return S_OK;
++                }
++            }
 +            IXMLHTTPRequest2Callback_OnResponseReceived(This->callback, xhr2_iface, This->custom_response_stream);
 +        }
 +        else
@@ -387,7 +398,7 @@ index 7dcc31ec..30fe225f 100644
          IXMLHTTPRequest2Callback_Release(This->callback);
      }
  
-@@ -2686,14 +2814,16 @@ HRESULT XMLHTTPRequest2_create(void **obj)
+@@ -2686,14 +2825,16 @@ HRESULT XMLHTTPRequest2_create(void **obj)
      /* do not call httprequest_put_onreadystatechange to avoid ref cycle */
      xhr2->req.sink = &xhr2->IDispatch_iface;
  

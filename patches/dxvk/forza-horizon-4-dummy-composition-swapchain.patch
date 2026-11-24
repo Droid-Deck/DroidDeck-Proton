@@ -1,6 +1,8 @@
+diff --git a/src/util/config/config.cpp b/src/util/config/config.cpp
+index 4dc6b1d..6ad5a6b 100644
 --- a/src/util/config/config.cpp
 +++ b/src/util/config/config.cpp
-@@ -60,6 +60,12 @@
+@@ -60,6 +60,12 @@ namespace dxvk {
      { R"(\\Anno117\.exe$)", {{
        { "dxgi.enableDummyCompositionSwapchain", "True" }
      }} },
