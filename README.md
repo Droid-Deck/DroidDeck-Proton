@@ -95,6 +95,12 @@ faulting in ntdll (Crash Bandicoot N. Sane Trilogy stopped at its title screen, 
 pool instead of the waiter's stack, so a thread killed during a wait no longer leaves a freed entry that hangs every
 later wait on that queue (Forza Horizon 6 loading screen, PR #30).
 
+Also unreleased: one fix for DRAGON BALL FighterZ quitting by itself about 40 seconds after start.
+`patches/wine-hotfixes/pending/ntdll-arm64ec-hide-wine-exports-by-name.patch`: with `HideWineExports` on, an x86-64
+program still found `wine_get_version`, because the check compared with the ARM64EC functions while x64 callers get the
+exports' thunks. The game's Easy Anti-Cheat loader then never reached its `-eac-nop-loaded` offline mode. The check also
+matches the name now.
+
 11-12.8 is 11-12.7 plus two winedmo fixes for H.264 videos decoded to the end.
 `patches/wine-hotfixes/pending/winedmo-flush-parser-on-drain.patch`: draining a decoder also sends the access unit
 FFmpeg's H.264 parser still holds, so a video's last frame is no longer lost. Burnout Paradise Remastered waited for
