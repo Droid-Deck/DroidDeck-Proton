@@ -1,0 +1,59 @@
+From aea5966e0512ae08bf1ee03f125e371624fa68f5 Mon Sep 17 00:00:00 2001
+From: FrenklinFish <354610592+FrenklinFish@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 17:37:30 +0100
+Subject: [PATCH] ntdll: Hide the Wine exports from x64 callers on ARM64EC too.
+
+is_hidden_export() compares the address LdrGetProcedureAddress() found
+with &wine_get_version, &wine_get_build_id and &wine_get_host_version.
+In an ARM64EC build those are the ARM64EC functions, while the export
+table hands an x64 caller the export's thunk in .hexpthk. The two never
+match, so HideWineExports hides nothing from an x86-64 program.
+
+Easy Anti-Cheat's loader library checks for wine_get_version before it
+looks at -eac-nop-loaded. With the export visible it takes its Wine
+path, which needs an anti-cheat build the game does not have, and
+CreateGameClient() returns NULL. DRAGON BALL FighterZ, whose protonfix
+enables HideWineExports for this reason, then quits by itself about
+40 seconds after launch.
+
+Also match the requested name when the module is ntdll.
+---
+ dlls/ntdll/loader.c | 14 +++++++++-----
+ 1 file changed, 9 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/ntdll/loader.c b/dlls/ntdll/loader.c
+index a9cdfb8..4d06190 100644
+--- a/dlls/ntdll/loader.c
++++ b/dlls/ntdll/loader.c
+@@ -2442,11 +2442,15 @@ static void hidden_exports_init( const WCHAR *appname )
+  *
+  * Checks if a specific export should be hidden.
+  */
+-static BOOL is_hidden_export( void *proc )
++static BOOL is_hidden_export( const WINE_MODREF *wm, const ANSI_STRING *name, void *proc )
+ {
+-    return hide_wine_exports && (proc == &wine_get_version ||
+-                                 proc == &wine_get_build_id ||
+-                                 proc == &wine_get_host_version);
++    if (!hide_wine_exports) return FALSE;
++    if (proc == &wine_get_version || proc == &wine_get_build_id || proc == &wine_get_host_version) return TRUE;
++    /* An ARM64EC export resolves to its x64 thunk in .hexpthk, never to the function, so match the name too */
++    if (wm->ldr.DdagNode != node_ntdll || !name || !name->Buffer) return FALSE;
++    return !strcmp( name->Buffer, "wine_get_version" ) ||
++           !strcmp( name->Buffer, "wine_get_build_id" ) ||
++           !strcmp( name->Buffer, "wine_get_host_version" );
+ }
+ 
+ 
+@@ -2470,7 +2474,7 @@ NTSTATUS WINAPI LdrGetProcedureAddress(HMODULE module, const ANSI_STRING *name,
+     {
+         void *proc = name ? find_named_export( module, exports, exp_size, name->Buffer, -1, NULL, wm, TRUE )
+                           : find_ordinal_export( module, exports, exp_size, ord - exports->Base, NULL, wm, TRUE );
+-        if (proc && !is_hidden_export( proc ))
++        if (proc && !is_hidden_export( wm, name, proc ))
+         {
+             *address = proc;
+             ret = STATUS_SUCCESS;
+-- 
+2.53.0
+

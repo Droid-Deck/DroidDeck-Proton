@@ -29,6 +29,7 @@ apply "$root/patches/wine-hotfixes/pending/mmdevapi-skip-death-stranding-code-ho
 apply "$root/patches/wine-hotfixes/pending/ntdll-arm64ec-get-context-null.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-futex-entry-pool.patch"
 apply "$root/patches/wine-hotfixes/pending/ntdll-arm64ec-fill-hybrid-pointers-in-image-copies.patch"
+apply "$root/patches/wine-hotfixes/pending/ntdll-arm64ec-hide-wine-exports-by-name.patch"
 if [ -f "$root/FEX/CMakeLists.txt" ]; then
   cd "$root/FEX"
   for p in "$root"/patches/fex/*.patch; do
