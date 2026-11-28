@@ -709,7 +709,6 @@ apply_all_in_dir() {
 
     # PROTON_PREFER_SDL / Steam Deck: Sony pads were dropped by both hidraw and SDL
     apply_patch "../patches/wine-hotfixes/pending/winebus-sdl-keep-sony-pads-when-hidraw-is-disabled.patch"
-    apply_patch "../patches/wine-hotfixes/pending/winebus-preserve-signal-handlers-when-initializing-sdl.patch"
     # Bluetooth DualShock 4 presented as a wired one, like the DualSense
     apply_patch "../patches/wine-hotfixes/pending/winebus-expose-bluetooth-dualshock4-as-usb.patch"
     apply_patch "../patches/wine-hotfixes/pending/winepulse-bluetooth-dualshock4-audio.patch"
