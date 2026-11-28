@@ -1,0 +1,26 @@
+From e90cb1c257b8042d7122bc6b4ad4f99b4f60892a Mon Sep 17 00:00:00 2001
+From: Fabien Romano <fabienromano@gmail.com>
+Date: Thu, 22 Oct 2026 07:53:14 +0100
+Subject: [PATCH] winebus: Preserve signal handlers when initializing SDL.
+
+SDL installs SIGINT and SIGTERM handlers that only queue an SDL_QUIT event,
+which winedevice never reads, so winedevice.exe kept running after a
+terminate request. A compositor or reaper that ends the process tree then
+waits for it forever.
+---
+ dlls/winebus.sys/bus_sdl.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/dlls/winebus.sys/bus_sdl.c b/dlls/winebus.sys/bus_sdl.c
+--- a/dlls/winebus.sys/bus_sdl.c
++++ b/dlls/winebus.sys/bus_sdl.c
+@@ -1364,6 +1364,7 @@ NTSTATUS sdl_bus_init(void *args)
+     pSDL_SetHintWithPriority("SteamVirtualGamepadInfo", "", SDL_HINT_OVERRIDE);
+     unsetenv("SteamVirtualGamepadInfo");
+ 
++    pSDL_SetHintWithPriority(SDL_HINT_NO_SIGNAL_HANDLERS, "1", SDL_HINT_OVERRIDE);
+     if (pSDL_Init(SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC) < 0)
+     {
+         ERR("could not init SDL: %s\n", pSDL_GetError());
+-- 
+2.47.0
